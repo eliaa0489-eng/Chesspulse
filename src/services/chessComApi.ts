@@ -82,12 +82,14 @@ export function validateChessComUrl(rawUrl: unknown): string | undefined {
 }
 
 /**
- * Ensures avatar URLs never point to external third-party CDNs (DSGVO / Zero-Tracking).
- * Only permits local `/api/chesscom/avatar/...` proxy paths.
+ * Generates a deterministic local SVG Data URI avatar (DSGVO / Zero External CDN Requests).
+ * Never triggers third-party requests and never fails with 404 on static/serverless hosts.
  */
 export function getLocalAvatarPath(username: string): string {
-  const safe = sanitizeChessHandle(username) || 'player';
-  return `/api/chesscom/avatar/${encodeURIComponent(safe)}`;
+  const safe = sanitizeChessHandle(username) || 'cp';
+  const initials = safe.slice(0, 2).toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80"><rect width="80" height="80" rx="20" fill="#0F172A"/><circle cx="64" cy="16" r="6" fill="#059669"/><text x="40" y="47" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, Inter, sans-serif" font-size="24" font-weight="800">${initials}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 /**
@@ -138,9 +140,92 @@ function parseCategoryStats(rawCat: unknown): TimeControlCategoryStats {
   return { current, best, wins, losses, draws, total, winRatePct };
 }
 
+function parseRawGamesToRecentSummaries(rawGames: unknown[], cleanHandle: string): RecentGameSummary[] {
+  return rawGames.slice(0, 12).map((item) => {
+    const g = (item as Record<string, unknown>) || {};
+    const white = (g.white as Record<string, unknown>) || {};
+    const black = (g.black as Record<string, unknown>) || {};
+    const wUser = typeof white.username === 'string' ? white.username : 'White';
+    const bUser = typeof black.username === 'string' ? black.username : 'Black';
+    const isWhite = wUser.toLowerCase() === cleanHandle;
+    const userSide = isWhite ? white : black;
+    const oppSide = isWhite ? black : white;
+    const rawRes = typeof userSide.result === 'string' ? userSide.result : '';
+    let result: 'win' | 'draw' | 'loss' = 'loss';
+    if (rawRes === 'win') result = 'win';
+    else if (
+      ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
+        rawRes
+      )
+    ) {
+      result = 'draw';
+    }
+    const accObj = (g.accuracies as Record<string, unknown>) || {};
+    const rawAcc = isWhite ? accObj.white : accObj.black;
+    return {
+      endTime: typeof g.end_time === 'number' ? g.end_time : 0,
+      timeClass: typeof g.time_class === 'string' ? g.time_class : 'rapid',
+      userRating: typeof userSide.rating === 'number' ? Math.round(userSide.rating) : 1200,
+      opponentUsername: typeof oppSide.username === 'string' ? oppSide.username : 'Opponent',
+      opponentRating: typeof oppSide.rating === 'number' ? Math.round(oppSide.rating) : 1200,
+      result,
+      accuracy: typeof rawAcc === 'number' ? Math.round(rawAcc * 10) / 10 : null,
+    };
+  });
+}
+
+async function fetchDirectPublicChessComOverview(
+  cleanHandle: string
+): Promise<{ profile: Record<string, unknown>; stats: Record<string, unknown> } | 'NOT_FOUND' | null> {
+  try {
+    const [profileRes, statsRes] = await Promise.all([
+      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}`),
+      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/stats`),
+    ]);
+    if (profileRes.status === 404) return 'NOT_FOUND';
+    if (!profileRes.ok) return null;
+    const profile = (await profileRes.json()) as Record<string, unknown>;
+    const stats = statsRes.ok ? ((await statsRes.json()) as Record<string, unknown>) : {};
+    return { profile, stats };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDirectPublicChessComGames(
+  cleanHandle: string,
+  limit: number
+): Promise<Record<string, unknown>[] | 'NOT_FOUND' | null> {
+  try {
+    const archivesRes = await fetch(
+      `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/archives`
+    );
+    if (archivesRes.status === 404) return 'NOT_FOUND';
+    if (!archivesRes.ok) return null;
+    const archivesData = (await archivesRes.json()) as { archives?: string[] };
+    const archiveList = Array.isArray(archivesData?.archives) ? archivesData.archives : [];
+    if (archiveList.length === 0) return [];
+
+    const latestUrl = archiveList[archiveList.length - 1];
+    if (typeof latestUrl !== 'string' || !latestUrl.startsWith('https://api.chess.com/')) {
+      return [];
+    }
+    const gamesRes = await fetch(latestUrl);
+    if (!gamesRes.ok) return null;
+    const gamesData = (await gamesRes.json()) as { games?: Record<string, unknown>[] };
+    const rawGames = Array.isArray(gamesData?.games) ? gamesData.games : [];
+    const sorted = [...rawGames].sort(
+      (a, b) => (typeof b.end_time === 'number' ? b.end_time : 0) - (typeof a.end_time === 'number' ? a.end_time : 0)
+    );
+    return sorted.slice(0, limit);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Fetches live player statistics and recent match summaries from our secure backend proxy.
- * Zero mock data, zero external CDN requests.
+ * Fetches live player statistics and recent match summaries from our secure backend proxy,
+ * with automatic fallback to the public Chess.com API if the serverless route is cold or unavailable.
  */
 export async function fetchLivePlayerStats(
   username: string
@@ -154,21 +239,31 @@ export async function fetchLivePlayerStats(
     };
   }
 
+  let profileObj: Record<string, unknown> | null = null;
+  let statsObj: Record<string, unknown> | null = null;
+  let rawRecentGames: unknown[] = [];
+
   try {
     const [overviewRes, matchesRes] = await Promise.all([
       fetch(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/overview`),
       fetch(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=12`),
     ]);
 
-    if (overviewRes.status === 404) {
-      return {
-        code: 'USER_NOT_FOUND',
-        data: null,
-        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
-      };
+    const contentType = overviewRes.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+
+    if (overviewRes.status === 404 && isJson) {
+      const errBody = await overviewRes.json().catch(() => ({}));
+      if (errBody?.code === 'USER_NOT_FOUND') {
+        return {
+          code: 'USER_NOT_FOUND',
+          data: null,
+          errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+        };
+      }
     }
 
-    if (overviewRes.status === 429 || matchesRes.status === 429) {
+    if (overviewRes.status === 429) {
       return {
         code: 'RATE_LIMITED',
         data: null,
@@ -176,121 +271,103 @@ export async function fetchLivePlayerStats(
       };
     }
 
-    if (!overviewRes.ok) {
-      let errPayload: unknown = null;
-      try {
-        errPayload = await overviewRes.json();
-      } catch {
-        errPayload = null;
+    if (overviewRes.ok && isJson) {
+      const overviewPayload = await overviewRes.json();
+      profileObj = (overviewPayload?.profile as Record<string, unknown>) || overviewPayload;
+      statsObj = (overviewPayload?.stats as Record<string, unknown>) || overviewPayload;
+    }
+
+    if (matchesRes.ok && (matchesRes.headers.get('content-type') || '').includes('application/json')) {
+      const matchesPayload = await matchesRes.json();
+      if (Array.isArray(matchesPayload?.games)) {
+        rawRecentGames = matchesPayload.games;
       }
+    }
+  } catch {
+    // Will try direct public API fallback below
+  }
+
+  // Fallback to direct public Chess.com API if proxy route returned HTML/404/502 on serverless host
+  if (!profileObj || !statsObj) {
+    const directOverview = await fetchDirectPublicChessComOverview(cleanHandle);
+    if (directOverview === 'NOT_FOUND') {
+      return {
+        code: 'USER_NOT_FOUND',
+        data: null,
+        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+      };
+    }
+    if (!directOverview) {
       return {
         code: 'NETWORK_ERROR',
         data: null,
-        errorMessage: toSafeErrorString(
-          errPayload,
-          `Unable to load statistics for "@${cleanHandle}".`
-        ),
+        errorMessage: `Unable to load statistics for "@${cleanHandle}".`,
       };
     }
-
-    const overviewPayload = await overviewRes.json();
-    const profileObj = overviewPayload?.profile || {};
-    const statsObj = overviewPayload?.stats || {};
-
-    const rapid = parseCategoryStats(statsObj.chess_rapid);
-    const blitz = parseCategoryStats(statsObj.chess_blitz);
-    const bullet = parseCategoryStats(statsObj.chess_bullet);
-
-    const totalWins = rapid.wins + blitz.wins + bullet.wins;
-    const totalDraws = rapid.draws + blitz.draws + bullet.draws;
-    const totalLosses = rapid.losses + blitz.losses + bullet.losses;
-    const totalGames = totalWins + totalDraws + totalLosses;
-
-    const overallWinRatePct =
-      totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
-    const overallDrawRatePct =
-      totalGames > 0 ? Math.round((totalDraws / totalGames) * 1000) / 10 : 0;
-    const overallLossRatePct =
-      totalGames > 0
-        ? Math.max(0, Math.round((100 - overallWinRatePct - overallDrawRatePct) * 10) / 10)
-        : 0;
-
-    let recentGames: RecentGameSummary[] = [];
-    if (matchesRes.ok) {
-      const matchesPayload = await matchesRes.json();
-      const rawGames = Array.isArray(matchesPayload?.games) ? matchesPayload.games : [];
-      recentGames = rawGames.slice(0, 12).map((g: Record<string, unknown>) => {
-        const white = (g.white as Record<string, unknown>) || {};
-        const black = (g.black as Record<string, unknown>) || {};
-        const wUser = typeof white.username === 'string' ? white.username : 'White';
-        const bUser = typeof black.username === 'string' ? black.username : 'Black';
-        const isWhite = wUser.toLowerCase() === cleanHandle;
-        const userSide = isWhite ? white : black;
-        const oppSide = isWhite ? black : white;
-        const rawRes = typeof userSide.result === 'string' ? userSide.result : '';
-        let result: 'win' | 'draw' | 'loss' = 'loss';
-        if (rawRes === 'win') result = 'win';
-        else if (
-          ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
-            rawRes
-          )
-        ) {
-          result = 'draw';
-        }
-        const accObj = (g.accuracies as Record<string, unknown>) || {};
-        const rawAcc = isWhite ? accObj.white : accObj.black;
-        return {
-          endTime: typeof g.end_time === 'number' ? g.end_time : 0,
-          timeClass: typeof g.time_class === 'string' ? g.time_class : 'rapid',
-          userRating: typeof userSide.rating === 'number' ? Math.round(userSide.rating) : 1200,
-          opponentUsername: typeof oppSide.username === 'string' ? oppSide.username : 'Opponent',
-          opponentRating: typeof oppSide.rating === 'number' ? Math.round(oppSide.rating) : 1200,
-          result,
-          accuracy: typeof rawAcc === 'number' ? Math.round(rawAcc * 10) / 10 : null,
-        };
-      });
-    }
-
-    const resolvedUsername =
-      typeof profileObj.username === 'string' && profileObj.username.trim()
-        ? profileObj.username.trim()
-        : cleanHandle;
-
-    return {
-      code: 'OK',
-      data: {
-        username: resolvedUsername,
-        title: typeof profileObj.title === 'string' ? profileObj.title : undefined,
-        avatar: getLocalAvatarPath(resolvedUsername),
-        joinedTimestamp: typeof profileObj.joined === 'number' ? profileObj.joined : undefined,
-        followers: typeof profileObj.followers === 'number' ? profileObj.followers : undefined,
-        profileUrl:
-          validateChessComUrl(profileObj.url) ||
-          `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`,
-        rapid,
-        blitz,
-        bullet,
-        tacticsPeak:
-          typeof statsObj.tactics?.highest?.rating === 'number'
-            ? statsObj.tactics.highest.rating
-            : null,
-        totalGames,
-        totalWins,
-        totalDraws,
-        totalLosses,
-        overallWinRatePct,
-        overallDrawRatePct,
-        overallLossRatePct,
-        recentGames,
-      },
-    };
-  } catch {
-    return {
-      code: 'NETWORK_ERROR',
-      data: null,
-      errorMessage: 'Network error while communicating with the ChessPulse server proxy.',
-    };
+    profileObj = directOverview.profile;
+    statsObj = directOverview.stats;
   }
+
+  if (rawRecentGames.length === 0) {
+    const directGames = await fetchDirectPublicChessComGames(cleanHandle, 12);
+    if (Array.isArray(directGames)) {
+      rawRecentGames = directGames;
+    }
+  }
+
+  const rapid = parseCategoryStats(statsObj.chess_rapid);
+  const blitz = parseCategoryStats(statsObj.chess_blitz);
+  const bullet = parseCategoryStats(statsObj.chess_bullet);
+
+  const totalWins = rapid.wins + blitz.wins + bullet.wins;
+  const totalDraws = rapid.draws + blitz.draws + bullet.draws;
+  const totalLosses = rapid.losses + blitz.losses + bullet.losses;
+  const totalGames = totalWins + totalDraws + totalLosses;
+
+  const overallWinRatePct =
+    totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
+  const overallDrawRatePct =
+    totalGames > 0 ? Math.round((totalDraws / totalGames) * 1000) / 10 : 0;
+  const overallLossRatePct =
+    totalGames > 0
+      ? Math.max(0, Math.round((100 - overallWinRatePct - overallDrawRatePct) * 10) / 10)
+      : 0;
+
+  const recentGames = parseRawGamesToRecentSummaries(rawRecentGames, cleanHandle);
+
+  const resolvedUsername =
+    typeof profileObj.username === 'string' && profileObj.username.trim()
+      ? profileObj.username.trim()
+      : cleanHandle;
+
+  const tacticsObj = (statsObj.tactics as Record<string, unknown>) || {};
+  const highestObj = (tacticsObj.highest as Record<string, unknown>) || {};
+
+  return {
+    code: 'OK',
+    data: {
+      username: resolvedUsername,
+      title: typeof profileObj.title === 'string' ? profileObj.title : undefined,
+      avatar: getLocalAvatarPath(resolvedUsername),
+      joinedTimestamp: typeof profileObj.joined === 'number' ? profileObj.joined : undefined,
+      followers: typeof profileObj.followers === 'number' ? profileObj.followers : undefined,
+      profileUrl:
+        validateChessComUrl(profileObj.url) ||
+        `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`,
+      rapid,
+      blitz,
+      bullet,
+      tacticsPeak: typeof highestObj.rating === 'number' ? Math.round(highestObj.rating) : null,
+      totalGames,
+      totalWins,
+      totalDraws,
+      totalLosses,
+      overallWinRatePct,
+      overallDrawRatePct,
+      overallLossRatePct,
+      recentGames,
+    },
+  };
 }
 
 function extractPgnHeader(pgn: string, headerName: string): string | undefined {
@@ -316,17 +393,23 @@ export async function fetchRealPlayerMatchesWithStatus(
     };
   }
 
+  let rawGames: unknown[] | null = null;
+
   try {
     const response = await fetch(
       `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=${limit}`
     );
+    const isJson = (response.headers.get('content-type') || '').includes('application/json');
 
-    if (response.status === 404) {
-      return {
-        code: 'USER_NOT_FOUND',
-        matches: [],
-        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
-      };
+    if (response.status === 404 && isJson) {
+      const errBody = await response.json().catch(() => ({}));
+      if (errBody?.code === 'USER_NOT_FOUND') {
+        return {
+          code: 'USER_NOT_FOUND',
+          matches: [],
+          errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+        };
+      }
     }
 
     if (response.status === 429) {
@@ -337,110 +420,123 @@ export async function fetchRealPlayerMatchesWithStatus(
       };
     }
 
-    if (!response.ok) {
+    if (response.ok && isJson) {
+      const payload = await response.json();
+      if (Array.isArray(payload?.games)) {
+        rawGames = payload.games;
+      }
+    }
+  } catch {
+    // Fallback to direct public API below
+  }
+
+  if (rawGames === null) {
+    const directGames = await fetchDirectPublicChessComGames(cleanHandle, limit);
+    if (directGames === 'NOT_FOUND') {
+      return {
+        code: 'USER_NOT_FOUND',
+        matches: [],
+        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+      };
+    }
+    if (directGames === null) {
       return {
         code: 'NETWORK_ERROR',
         matches: [],
-        errorMessage: 'Failed to retrieve recent matches from server proxy.',
+        errorMessage: 'Could not retrieve recent matches from Chess.com.',
       };
     }
+    rawGames = directGames;
+  }
 
-    const payload = await response.json();
-    const rawGames = Array.isArray(payload?.games) ? payload.games : [];
+  const matches: ChessComMatch[] = [];
+  for (let i = 0; i < rawGames.length; i++) {
+    const g = rawGames[i] as Record<string, unknown>;
+    const rawPgn = typeof g.pgn === 'string' && g.pgn.length <= 100_000 ? g.pgn : '';
+    if (!rawPgn) continue;
 
-    const matches: ChessComMatch[] = [];
-    for (let i = 0; i < rawGames.length; i++) {
-      const g = rawGames[i] as Record<string, unknown>;
-      const rawPgn = typeof g.pgn === 'string' && g.pgn.length <= 100_000 ? g.pgn : '';
-      if (!rawPgn) continue;
+    const whiteObj = (g.white as Record<string, unknown>) || {};
+    const blackObj = (g.black as Record<string, unknown>) || {};
+    const wUsername = typeof whiteObj.username === 'string' ? whiteObj.username : 'White';
+    const bUsername = typeof blackObj.username === 'string' ? blackObj.username : 'Black';
+    const wRating = typeof whiteObj.rating === 'number' ? Math.round(whiteObj.rating) : 1200;
+    const bRating = typeof blackObj.rating === 'number' ? Math.round(blackObj.rating) : 1200;
+    const wResult = typeof whiteObj.result === 'string' ? whiteObj.result : 'unknown';
+    const bResult = typeof blackObj.result === 'string' ? blackObj.result : 'unknown';
 
-      const whiteObj = (g.white as Record<string, unknown>) || {};
-      const blackObj = (g.black as Record<string, unknown>) || {};
-      const wUsername = typeof whiteObj.username === 'string' ? whiteObj.username : 'White';
-      const bUsername = typeof blackObj.username === 'string' ? blackObj.username : 'Black';
-      const wRating = typeof whiteObj.rating === 'number' ? Math.round(whiteObj.rating) : 1200;
-      const bRating = typeof blackObj.rating === 'number' ? Math.round(blackObj.rating) : 1200;
-      const wResult = typeof whiteObj.result === 'string' ? whiteObj.result : 'unknown';
-      const bResult = typeof blackObj.result === 'string' ? blackObj.result : 'unknown';
+    const userColor: 'white' | 'black' =
+      wUsername.toLowerCase() === cleanHandle ? 'white' : 'black';
+    const userSideResult = userColor === 'white' ? wResult : bResult;
 
-      const userColor: 'white' | 'black' =
-        wUsername.toLowerCase() === cleanHandle ? 'white' : 'black';
-      const userSideResult = userColor === 'white' ? wResult : bResult;
-
-      let userWon: boolean | 'draw' = false;
-      let userResultText = 'Lost';
-      if (userSideResult === 'win') {
-        userWon = true;
-        userResultText = 'Won';
-      } else if (
-        ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
-          userSideResult
-        )
-      ) {
-        userWon = 'draw';
-        userResultText = 'Draw';
-      } else if (userSideResult === 'timeout') {
-        userResultText = 'Lost on time';
-      } else if (userSideResult === 'checkmated') {
-        userResultText = 'Checkmated';
-      } else if (userSideResult === 'resigned') {
-        userResultText = 'Resigned';
-      }
-
-      const endTime = typeof g.end_time === 'number' ? g.end_time : Math.floor(Date.now() / 1000);
-      const dateFormatted = new Date(endTime * 1000).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-
-      const rawTimeClass = typeof g.time_class === 'string' ? g.time_class : 'blitz';
-      const timeClass: 'blitz' | 'rapid' | 'bullet' | 'daily' =
-        rawTimeClass === 'rapid' || rawTimeClass === 'bullet' || rawTimeClass === 'daily'
-          ? rawTimeClass
-          : 'blitz';
-
-      const timeControlLabel =
-        timeClass === 'rapid'
-          ? 'Rapid 10+0'
-          : timeClass === 'bullet'
-          ? 'Bullet 1+0'
-          : timeClass === 'daily'
-          ? 'Daily'
-          : 'Blitz 3+2';
-
-      const safeUrl =
-        validateChessComUrl(g.url) ||
-        `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`;
-
-      matches.push({
-        id: `match-${cleanHandle}-${endTime}-${i}`,
-        url: safeUrl,
-        pgn: rawPgn,
-        timeControl: timeControlLabel,
-        timeClass,
-        endTime,
-        dateFormatted,
-        white: { username: wUsername, rating: wRating, result: wResult },
-        black: { username: bUsername, rating: bRating, result: bResult },
-        userColor,
-        userWon,
-        userResultText,
-        eco: extractPgnHeader(rawPgn, 'ECO') || 'B90',
-        openingName: extractPgnHeader(rawPgn, 'ECOUrl')?.split('/').pop()?.replace(/-/g, ' ') || 'Standard Opening',
-      });
+    let userWon: boolean | 'draw' = false;
+    let userResultText = 'Lost';
+    if (userSideResult === 'win') {
+      userWon = true;
+      userResultText = 'Won';
+    } else if (
+      ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
+        userSideResult
+      )
+    ) {
+      userWon = 'draw';
+      userResultText = 'Draw';
+    } else if (userSideResult === 'timeout') {
+      userResultText = 'Lost on time';
+    } else if (userSideResult === 'checkmated') {
+      userResultText = 'Checkmated';
+    } else if (userSideResult === 'resigned') {
+      userResultText = 'Resigned';
     }
 
-    return {
-      code: 'OK',
-      matches,
-    };
-  } catch {
-    return {
-      code: 'NETWORK_ERROR',
-      matches: [],
-      errorMessage: 'Could not connect to the ChessPulse match proxy.',
-    };
+    const endTime = typeof g.end_time === 'number' ? g.end_time : Math.floor(Date.now() / 1000);
+    const dateFormatted = new Date(endTime * 1000).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+
+    const rawTimeClass = typeof g.time_class === 'string' ? g.time_class : 'blitz';
+    const timeClass: 'blitz' | 'rapid' | 'bullet' | 'daily' =
+      rawTimeClass === 'rapid' || rawTimeClass === 'bullet' || rawTimeClass === 'daily'
+        ? rawTimeClass
+        : 'blitz';
+
+    const timeControlLabel =
+      timeClass === 'rapid'
+        ? 'Rapid 10+0'
+        : timeClass === 'bullet'
+        ? 'Bullet 1+0'
+        : timeClass === 'daily'
+        ? 'Daily'
+        : 'Blitz 3+2';
+
+    const safeUrl =
+      validateChessComUrl(g.url) ||
+      `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`;
+
+    matches.push({
+      id: `match-${cleanHandle}-${endTime}-${i}`,
+      url: safeUrl,
+      pgn: rawPgn,
+      timeControl: timeControlLabel,
+      timeClass,
+      endTime,
+      dateFormatted,
+      white: { username: wUsername, rating: wRating, result: wResult },
+      black: { username: bUsername, rating: bRating, result: bResult },
+      userColor,
+      userWon,
+      userResultText,
+      eco: extractPgnHeader(rawPgn, 'ECO') || 'B90',
+      openingName:
+        extractPgnHeader(rawPgn, 'ECOUrl')?.split('/').pop()?.replace(/-/g, ' ') ||
+        'Standard Opening',
+    });
   }
+
+  return {
+    code: 'OK',
+    matches,
+  };
 }
 
 /**

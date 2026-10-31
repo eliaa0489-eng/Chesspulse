@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const PORT = 3000;
 const CHESSCOM_USER_AGENT = 'ChessPulse-App/1.0 (contact: support@chesspulse.app)';
 const USERNAME_REGEX = /^[a-z0-9_-]{2,40}$/;
-const MAX_UPSTREAM_BYTES = 2 * 1024 * 1024; // 2 MB strict response size cap
+const MAX_UPSTREAM_BYTES = 25 * 1024 * 1024; // 25 MB cap to support active grandmaster monthly archives
 
 // Canonical Base URL — never trust unvalidated req.headers.host
 function getCanonicalBaseUrl(): string {
@@ -89,8 +89,8 @@ function setCached<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
   apiCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
-// --- Hardened Upstream Fetch (redirect: 'error' + 2 MB Stream Cap) ---
-async function fetchChessComJson(url: string, timeoutMs = 8000): Promise<{ status: number; data: unknown }> {
+// --- Hardened Upstream Fetch (redirect: 'error' + 25 MB Stream Cap) ---
+async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ status: number; data: unknown }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -111,7 +111,7 @@ async function fetchChessComJson(url: string, timeoutMs = 8000): Promise<{ statu
 
     const contentLengthHeader = response.headers.get('content-length');
     if (contentLengthHeader && Number(contentLengthHeader) > MAX_UPSTREAM_BYTES) {
-      throw new Error('Upstream response exceeds maximum allowed size (2 MB).');
+      throw new Error('Upstream response exceeds maximum allowed size (25 MB).');
     }
 
     if (!response.body) {
@@ -393,7 +393,7 @@ app.set('trust proxy', 1);
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", 'data:'],
             fontSrc: ["'self'", 'data:'],
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", 'https://api.chess.com'],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
             frameAncestors: ["'self'"],
