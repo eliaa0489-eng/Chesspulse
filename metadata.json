@@ -1,0 +1,8 @@
+{
+  "name": "Chess Pulse",
+  "description": "Stop Blundering. Train Your Own Mistakes. ChessPulse connects to your Chess.com profile to unlock dynamic analytics, opening audits, and custom tactical puzzles generated directly from your actual matches.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

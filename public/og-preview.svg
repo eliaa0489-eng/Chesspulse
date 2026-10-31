@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bgCanvas" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="55%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#F1F5F9"/>
+    </linearGradient>
+    <linearGradient id="king3D" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="45%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="emeraldAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Crisp Alabaster Surface -->
+  <rect width="1200" height="630" fill="url(#bgCanvas)"/>
+  <rect x="24" y="24" width="1152" height="582" rx="32" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+
+  <!-- Left Column: Brand & Value Proposition -->
+  <g transform="translate(84, 88)">
+    <!-- Brand Mark -->
+    <rect x="0" y="0" width="48" height="48" rx="14" fill="#0F172A"/>
+    <path d="M24 9V15.5M20.2 12H27.8" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M15.5 21C15.5 17.5 19.2 15.5 24 15.5C28.8 15.5 32.5 17.5 32.5 21C32.5 23.6 30.4 25.5 29 27.6L31.2 35.5H16.8L19 27.6C17.6 25.5 15.5 23.6 15.5 21Z" fill="#FFFFFF"/>
+    <path d="M14 38.8H34M12 42H36" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="42" cy="8" r="5.5" fill="#059669" stroke="#FFFFFF" stroke-width="2.5"/>
+
+    <text x="64" y="33" font-family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif" font-size="28" font-weight="800" fill="#0F172A" letter-spacing="-0.03em">ChessPulse</text>
+    <circle cx="222" cy="27" r="4.5" fill="#059669"/>
+
+    <!-- Main Headline -->
+    <text x="0" y="138" font-family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif" font-size="62" font-weight="800" fill="#0F172A" letter-spacing="-0.035em">Stop Blundering.</text>
+    <text x="0" y="210" font-family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif" font-size="62" font-weight="800" fill="url(#emeraldAccent)" letter-spacing="-0.035em">Train Your Mistakes.</text>
+
+    <!-- Subtitle -->
+    <text x="0" y="268" font-family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif" font-size="23" font-weight="500" fill="#475569">Turn real Chess.com blunders into personalized Stockfish 16.1</text>
+    <text x="0" y="302" font-family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif" font-size="23" font-weight="500" fill="#475569">tactical puzzles, centipawn telemetry, and repertoire audits.</text>
+
+    <!-- Telemetry KPI Row -->
+    <g transform="translate(0, 352)">
+      <rect x="0" y="0" width="188" height="84" rx="18" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5"/>
+      <text x="22" y="32" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#64748B">ENGINE DEPTH</text>
+      <text x="22" y="64" font-family="JetBrains Mono, monospace" font-size="26" font-weight="800" fill="#0F172A">Depth 36/40</text>
+
+      <rect x="206" y="0" width="188" height="84" rx="18" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5"/>
+      <text x="228" y="32" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#64748B">CENTIPAWN EVAL</text>
+      <text x="228" y="64" font-family="JetBrains Mono, monospace" font-size="26" font-weight="800" fill="#059669">+1.45 cp !!</text>
+
+      <rect x="412" y="0" width="206" height="84" rx="18" fill="#0F172A"/>
+      <text x="434" y="32" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#34D399">PUBLIC BETA</text>
+      <text x="434" y="64" font-family="Plus Jakarta Sans, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">Free Scan →</text>
+    </g>
+  </g>
+
+  <!-- Right Column: 3D Staunton King & Telemetry Preview Card -->
+  <g transform="translate(760, 74)">
+    <rect x="0" y="0" width="356" height="482" rx="36" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="16" y="16" width="324" height="450" rx="26" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+    <!-- Top Pill -->
+    <rect x="38" y="40" width="146" height="30" rx="15" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1"/>
+    <circle cx="54" cy="55" r="4" fill="#059669"/>
+    <text x="66" y="60" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700" fill="#065F46">NNUE TELEMETRY</text>
+
+    <!-- Sculpted 3D Matte-Black King Piece -->
+    <g transform="translate(78, 86)">
+      <ellipse cx="100" cy="204" rx="64" ry="11" fill="#E2E8F0"/>
+      <rect x="94" y="10" width="12" height="30" rx="3" fill="url(#king3D)"/>
+      <rect x="82" y="18" width="36" height="10" rx="3" fill="url(#king3D)"/>
+      <path d="M62 48 C74 40 126 40 138 48 L126 84 C114 88 86 88 74 84 Z" fill="url(#king3D)"/>
+      <ellipse cx="100" cy="86" rx="32" ry="6.5" fill="#1E293B" stroke="#059669" stroke-width="1.5"/>
+      <path d="M76 92 C78 120 70 144 62 166 C84 173 116 173 138 166 C130 144 122 120 124 92 Z" fill="url(#king3D)"/>
+      <ellipse cx="100" cy="172" rx="44" ry="9" fill="#0F172A"/>
+      <ellipse cx="100" cy="192" rx="54" ry="10.5" fill="url(#king3D)" stroke="#059669" stroke-width="2"/>
+    </g>
+
+    <!-- Win Probability Bar -->
+    <g transform="translate(38, 336)">
+      <text x="0" y="18" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#0F172A">WIN PROBABILITY</text>
+      <text x="218" y="18" font-family="JetBrains Mono, monospace" font-size="13" font-weight="800" fill="#059669">68.4% W</text>
+      <rect x="0" y="30" width="280" height="14" rx="7" fill="#F1F5F9"/>
+      <rect x="0" y="30" width="192" height="14" rx="7" fill="#059669"/>
+      <text x="0" y="68" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#475569">PV: 18. Nxd5!! exd5 19. exd5</text>
+      <text x="0" y="92" font-family="JetBrains Mono, monospace" font-size="12" font-weight="600" fill="#64748B">ACPL: 11.2 · Blunder Recovery</text>
+    </g>
+  </g>
+</svg>

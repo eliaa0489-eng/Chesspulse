@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #FFFFFF;
+    color: #0F172A;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom crisp card border and shadow */
+.saas-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+}
+
+.saas-card-muted {
+  background-color: #F8FAF9;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+}
+
+/* Subtly elevated preview shadow */
+.saas-preview-shadow {
+  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.07), 0 0 1px 1px rgba(15, 23, 42, 0.05);
+}
+
+/* Aceternity UI Technical Grid Pattern */
+.aceternity-grid {
+  background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
+    linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
+  background-size: 4rem 4rem;
+}
+
+/* Subtle mask for smooth grid fade-out */
+.grid-mask-radial {
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 60%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 60%, transparent 100%);
+}
+
+/* Warm Hero Glow (Shape.ai / Aceternity inspired) */
+.hero-warm-glow {
+  background: radial-gradient(circle 500px at 50% 280px, rgba(254, 243, 199, 0.45), rgba(253, 230, 138, 0.15), transparent 70%);
+}
+
+/* Sleek iPhone 16 Pro Titanium Frame Styling */
+.iphone-titanium-bezel {
+  background: linear-gradient(145deg, #3d3b38 0%, #1f1e1d 45%, #2a2927 100%);
+  box-shadow: 
+    0 50px 100px -20px rgba(15, 23, 42, 0.32),
+    0 25px 45px -15px rgba(5, 150, 105, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.iphone-inner-display {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.8), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Apple & Stripe Grade Luxurious Transitions */
+.ease-apple {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.duration-apple {
+  transition-duration: 500ms;
+}
+
+.duration-apple-slow {
+  transition-duration: 700ms;
+}
+
+/* Smooth micro-interactions */
+.apple-card-hover {
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 500ms cubic-bezier(0.16, 1, 0.3, 1), border-color 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.apple-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px -10px rgba(15, 23, 42, 0.08);
+}
+
+
+

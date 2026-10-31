@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Allow: /puzzles
+Allow: /impressum
+Allow: /datenschutz
+Disallow: /api/
+
+Sitemap: https://chesspulse.app/sitemap.xml
