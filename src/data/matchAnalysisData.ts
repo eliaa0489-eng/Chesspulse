@@ -1,389 +1,399 @@
-import { FullMatchAnalysis, AnalyzedPly } from '../types/chess';
 import { Chess } from 'chess.js';
+import { FullMatchAnalysis, AnalyzedPly, MoveClassification } from '../types/chess';
 
-// Construct match plies with authentic chess logic using chess.js
-function buildMatchPlies(): AnalyzedPly[] {
-  const chess = new Chess();
-
-  const rawMoves: {
-    san: string;
-    classification: AnalyzedPly['classification'];
-    evalScore: string;
-    evalDelta?: string;
-    explanation: string;
-    bestAlternative?: string;
-    tacticalThreat?: string;
-  }[] = [
-    // Move 1
-    {
-      san: 'e4',
-      classification: 'book',
-      evalScore: '+0.2',
-      explanation: 'King Pawn Opening: Direct stake in the center, freeing lines for queen and light-squared bishop.',
-    },
-    {
-      san: 'c5',
-      classification: 'book',
-      evalScore: '+0.2',
-      explanation: 'Sicilian Defense: The most combative response to 1.e4, fighting for central asymmetry.',
-    },
-    // Move 2
-    {
-      san: 'Nf3',
-      classification: 'book',
-      evalScore: '+0.2',
-      explanation: 'Open Sicilian preparation: Developing towards the center and preparing d4.',
-    },
-    {
-      san: 'd6',
-      classification: 'book',
-      evalScore: '+0.2',
-      explanation: 'Controls e5 and prepares Nf6 without allowing early e5 pawn thrusts.',
-    },
-    // Move 3
-    {
-      san: 'd4',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Liquidating central pawns to gain open c and d files for rapid piece activity.',
-    },
-    {
-      san: 'cxd4',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Trading a flank c-pawn for White\'s central d-pawn.',
-    },
-    // Move 4
-    {
-      san: 'Nxd4',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Recapturing with the knight on an aggressive central outpost.',
-    },
-    {
-      san: 'Nf6',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Developing with tempo against White\'s undefended e4 pawn.',
-    },
-    // Move 5
-    {
-      san: 'Nc3',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Natural defense of e4 while adding a second piece to central influence.',
-    },
-    {
-      san: 'a6',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Najdorf Variation: Denying b5 to White\'s knights and bishops while preparing ...b5.',
-    },
-    // Move 6
-    {
-      san: 'Be3',
-      classification: 'best',
-      evalScore: '+0.4',
-      explanation: 'English Attack: White prepares f3, Qd2, and O-O-O for a fierce opposite-side castling race.',
-    },
-    {
-      san: 'e5',
-      classification: 'book',
-      evalScore: '+0.4',
-      explanation: 'Classic Najdorf central strike, kicking the d4 knight at the cost of a backward d6 pawn.',
-    },
-    // Move 7
-    {
-      san: 'Nb3',
-      classification: 'best',
-      evalScore: '+0.4',
-      explanation: 'Retreating out of harm\'s way while maintaining surveillance over the c5 and d4 squares.',
-    },
-    {
-      san: 'Be6',
-      classification: 'good',
-      evalScore: '+0.3',
-      explanation: 'Developing the light-squared bishop to reinforce the d5 hole.',
-    },
-    // Move 8
-    {
-      san: 'f3',
-      classification: 'best',
-      evalScore: '+0.4',
-      explanation: 'Crucial glue move in the English Attack, guarding g4 against ...Ng4 ideas.',
-    },
-    {
-      san: 'Be7',
-      classification: 'book',
-      evalScore: '+0.3',
-      explanation: 'Preparing kingside castling and keeping options open on the queenside.',
-    },
-    // Move 9
-    {
-      san: 'Qd2',
-      classification: 'best',
-      evalScore: '+0.5',
-      explanation: 'Forming a lethal battery on the c1-h6 diagonal and paving the way for queenside castling.',
-    },
-    {
-      san: 'O-O',
-      classification: 'best',
-      evalScore: '+0.4',
-      explanation: 'Getting the Black monarch into safety before the center blows open.',
-    },
-    // Move 10
-    {
-      san: 'O-O-O',
-      classification: 'best',
-      evalScore: '+0.5',
-      explanation: 'Opposite-sides castling initiated. The race is on: White storms kingside, Black storms queenside.',
-    },
-    {
-      san: 'Nbd7',
-      classification: 'best',
-      evalScore: '+0.5',
-      explanation: 'Preparing ...b5 and ...Nb6 to generate counterplay along the half-open c-file.',
-    },
-    // Move 11
-    {
-      san: 'g4',
-      classification: 'best',
-      evalScore: '+0.6',
-      explanation: 'The pawn storm begins. Threatening g5 to evict Black\'s key defender on f6.',
-    },
-    {
-      san: 'b5',
-      classification: 'best',
-      evalScore: '+0.5',
-      explanation: 'Black counter-strikes immediately on the flank to disturb White\'s c3 knight.',
-    },
-    // Move 12
-    {
-      san: 'g5',
-      classification: 'best',
-      evalScore: '+0.7',
-      explanation: 'Pushing the tempo. Evicting the knight from f6 to compromise Black\'s king defenses.',
-    },
-    {
-      san: 'b4',
-      classification: 'best',
-      evalScore: '+0.7',
-      explanation: 'Counter-attack! Ignoring passive defense to dislodge White\'s c3 defender.',
-    },
-    // Move 13
-    {
-      san: 'Ne2',
-      classification: 'best',
-      evalScore: '+0.8',
-      explanation: 'Rerouting the knight towards g3 or d4 while keeping the d-file open for the heavy rook.',
-    },
-    {
-      san: 'Ne8',
-      classification: 'inaccuracy',
-      evalScore: '+1.4',
-      evalDelta: '+0.6',
-      explanation: 'Inaccuracy (?!): Passive retreat. Stockfish strongly preferred 13... Nh5, blockading White\'s kingside pawn march.',
-      bestAlternative: '13... Nh5',
-      tacticalThreat: 'White gains uncontested space on the kingside to launch a direct breakthrough.',
-    },
-    // Move 14
-    {
-      san: 'h4',
-      classification: 'best',
-      evalScore: '+1.6',
-      explanation: 'Best Move: Reinforcing g5 and opening the rook\'s vertical file for an h5-h6 battering ram.',
-    },
-    {
-      san: 'a5',
-      classification: 'best',
-      evalScore: '+1.5',
-      explanation: 'Black rushes to open lines against the White king with ...a4.',
-    },
-    // Move 15
-    {
-      san: 'Kb1',
-      classification: 'best',
-      evalScore: '+1.8',
-      explanation: 'Prophylactic king step stepping off the open c-file before Black\'s rooks arrive.',
-    },
-    {
-      san: 'a4',
-      classification: 'best',
-      evalScore: '+1.7',
-      explanation: 'Pushing White\'s b3 knight out of position.',
-    },
-    // Move 16
-    {
-      san: 'Nbd4',
-      classification: 'brilliant',
-      evalScore: '+3.4',
-      evalDelta: '+1.7',
-      explanation: 'Brilliant Move (!!): An intuitive piece sacrifice! White sacrifices the knight to shatter Black\'s pawn fortress on e5 and d6, opening highway lines to Black\'s king.',
-      bestAlternative: '16. Nbd4 (Only winning sacrifice)',
-      tacticalThreat: 'Threatens 17. Nc6 trapping or severely compromising Black\'s queen on d8.',
-    },
-    {
-      san: 'exd4',
-      classification: 'best',
-      evalScore: '+3.4',
-      explanation: 'Forced capture. Allowing 17. Nc6 would have instantly suffocated the position.',
-    },
-    // Move 17
-    {
-      san: 'Nxd4',
-      classification: 'best',
-      evalScore: '+3.6',
-      explanation: 'Recapturing with dynamic threats against c6 and e6. Black is hanging on by a thread.',
-    },
-    {
-      san: 'Qc7',
-      classification: 'mistake',
-      evalScore: '+5.2',
-      evalDelta: '+1.6',
-      explanation: 'Mistake (?): 17... Qc7 allows White to eliminate the key e6 bishop and infiltrate the light squares.',
-      bestAlternative: '17... Ne5 (Defending d7 and covering vital squares)',
-      tacticalThreat: 'Weakens Black\'s entire kingside pawn chain and leaves e6 fatally exposed.',
-    },
-    // Move 18
-    {
-      san: 'Nxe6',
-      classification: 'best',
-      evalScore: '+5.4',
-      explanation: 'Decimating Black\'s primary defensive anchor and shattering the pawn structure.',
-    },
-    {
-      san: 'fxe6',
-      classification: 'best',
-      evalScore: '+5.4',
-      explanation: 'Only recapture available.',
-    },
-    // Move 19
-    {
-      san: 'Bh3',
-      classification: 'best',
-      evalScore: '+5.8',
-      explanation: 'Targeting the isolated, backward e6 pawn with unstoppable pressure.',
-    },
-    {
-      san: 'Rxf3',
-      classification: 'inaccuracy',
-      evalScore: '+6.6',
-      evalDelta: '+0.8',
-      explanation: 'Inaccuracy (?!): Desperation counter-strike. Grabbing f3 does not resolve the fatal weaknesses on e6 and d6.',
-      bestAlternative: '19... Nc5',
-      tacticalThreat: 'White can capture on e6 with check, dismantling Black\'s king completely.',
-    },
-    // Move 20 - Critical Blunder Moment!
-    {
-      san: 'Be3',
-      classification: 'blunder',
-      evalScore: '+1.2',
-      evalDelta: '-5.4',
-      explanation: 'Blunder (??): Under sudden time pressure (only 14 seconds left on clock), White froze and retreated passively with 20. Be3??, throwing away a +6.6 winning advantage! The decisive blow was 20. Bxe6+! Kh8 21. Bd4! leading to immediate mate.',
-      bestAlternative: '20. Bxe6+ Kh8 21. Bd4! (+6.6)',
-      tacticalThreat: 'Allows Black to stabilize with ...d5 or ...Ne5, escaping the fatal mating net.',
-    },
-  ];
-
-  const plies: AnalyzedPly[] = [];
-
-  for (let i = 0; i < rawMoves.length; i++) {
-    const raw = rawMoves[i];
-    const isWhite = i % 2 === 0;
-    const moveNumber = Math.floor(i / 2) + 1;
-
-    try {
-      const moveResult = chess.move(raw.san);
-      if (moveResult) {
-        plies.push({
-          plyIndex: i,
-          moveNumber,
-          color: isWhite ? 'white' : 'black',
-          notation: `${moveNumber}${isWhite ? '.' : '...'} ${raw.san}`,
-          fromSquare: moveResult.from,
-          toSquare: moveResult.to,
-          fen: chess.fen(),
-          evalScore: raw.evalScore,
-          evalDelta: raw.evalDelta,
-          classification: raw.classification,
-          explanation: raw.explanation,
-          bestAlternative: raw.bestAlternative,
-          tacticalThreat: raw.tacticalThreat,
-        });
-      }
-    } catch {
-      // If move fails validation, skip
-    }
-  }
-
-  return plies;
+interface RawPlySeed {
+  san: string;
+  evalScore: string;
+  evalDelta?: string;
+  classification: MoveClassification;
+  bestAlternative?: string;
+  tacticalThreat?: string;
+  explanation: string;
 }
 
-export const FEATURED_MATCH_ANALYSIS: FullMatchAnalysis = {
-  id: 'match-fischer-sicilian-2026',
-  whitePlayer: {
-    name: 'Alex_Chen',
-    rating: 1842,
-    title: 'Club Master',
+const rawMoves: RawPlySeed[] = [
+  {
+    san: 'e4',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'King’s Pawn Opening. Stakes an immediate claim to d5 and f5 while opening diagonals for the Queen and Bishop.',
   },
-  blackPlayer: {
-    name: 'GrandMaster_V',
-    rating: 1845,
+  {
+    san: 'c5',
+    evalScore: '+0.2',
+    classification: 'book',
+    explanation: 'Sicilian Defense. Asymmetrical counter-fight for the d4 square without mirroring White’s structure.',
   },
-  event: 'ChessPulse Rated Match · Sicilian Najdorf',
-  timeControl: 'Blitz 3+2',
-  result: '1-0 (White converted after blunder recovery)',
-  accuracy: {
-    white: 88.4,
-    black: 79.1,
+  {
+    san: 'Nf3',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'Develops the kingside knight toward the center and prepares d2-d4.',
   },
-  plies: buildMatchPlies(),
-  coachReport: {
-    verdict: 'Decisive Tactical Slip on Move 20',
-    summary: 'A single severe calculation error on Move 20 (20. Be3??) converted White\'s commanding +6.6 advantage into a precarious +1.2 contest. While White ultimately salvaged the full point through aggressive counterplay, relying on opponent missteps in tournament play is unsustainable.',
-    tacticalLeaks: [
-      {
-        moveNumber: 20,
-        color: 'white',
-        notation: '20. Be3??',
-        evalDrop: 5.4,
-        classification: 'blunder',
-        motif: 'Overlooked tactical pin and surrendered decisive central knight outpost',
-        refutation: '20. Nd5! (+6.6) paralyzed Black\'s position and forced immediate material resignation.',
+  {
+    san: 'd6',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'Controls e5 and prepares the flexible Najdorf/Scheveningen pawn structure.',
+  },
+  {
+    san: 'd4',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'Opens the center immediately, trading Black’s c-pawn for White’s d-pawn.',
+  },
+  {
+    san: 'cxd4',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'Captures the central pawn and opens the half-open c-file for Black’s rooks.',
+  },
+  {
+    san: 'Nxd4',
+    evalScore: '+0.4',
+    classification: 'book',
+    explanation: 'Centralizes the knight on an active square with wide influence.',
+  },
+  {
+    san: 'Nf6',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'Develops with tempo by attacking White’s e4 pawn.',
+  },
+  {
+    san: 'Nc3',
+    evalScore: '+0.4',
+    classification: 'book',
+    explanation: 'Defends e4 naturally and increases control over the critical d5 outpost.',
+  },
+  {
+    san: 'a6',
+    evalScore: '+0.3',
+    classification: 'book',
+    explanation: 'The Najdorf signature move (B90): denies Nb5/Bb5 and prepares ...e5 or ...b5 expansion.',
+  },
+  {
+    san: 'Be3',
+    evalScore: '+0.4',
+    classification: 'book',
+    explanation: 'English Attack setup. Reinforces d4 and prepares f3, Qd2, and queenside castling.',
+  },
+  {
+    san: 'e5',
+    evalScore: '+0.4',
+    classification: 'book',
+    explanation: 'Strikes in the center to kick the d4-knight, accepting a backward d6 pawn and hole on d5.',
+  },
+  {
+    san: 'Nb3',
+    evalScore: '+0.4',
+    classification: 'best',
+    explanation: 'Retreats to b3 where the knight eyes c5 and d5 while keeping the f-pawn free to advance.',
+  },
+  {
+    san: 'Be6',
+    evalScore: '+0.4',
+    classification: 'best',
+    explanation: 'Develops the light-squared bishop to contest the critical d5 square.',
+  },
+  {
+    san: 'f3',
+    evalScore: '+0.5',
+    classification: 'best',
+    explanation: 'Blunts Ng4 and prepares the g2-g4 kingside pawn storm.',
+  },
+  {
+    san: 'Be7',
+    evalScore: '+0.4',
+    classification: 'good',
+    explanation: 'Prepares kingside castling; 8...h5 was a sharper modern alternative to slow down g4.',
+  },
+  {
+    san: 'Qd2',
+    evalScore: '+0.5',
+    classification: 'best',
+    explanation: 'Connects the queen and bishop battery and clears d1 for queenside castling.',
+  },
+  {
+    san: 'O-O',
+    evalScore: '+0.5',
+    classification: 'good',
+    explanation: 'Castles into White’s coming kingside storm, committing to a sharp opposite-side race.',
+  },
+  {
+    san: 'O-O-O',
+    evalScore: '+0.6',
+    classification: 'best',
+    explanation: '10. O-O-O! Completes queenside castling and places the rook directly on the half-open d-file.',
+  },
+  {
+    san: 'Nbd7',
+    evalScore: '+0.6',
+    classification: 'best',
+    explanation: 'Completes minor-piece development and supports ...b5 and ...Nb6.',
+  },
+  {
+    san: 'g4',
+    evalScore: '+0.7',
+    classification: 'best',
+    explanation: 'Launches the thematic English Attack bayonet storm against Black’s kingside.',
+  },
+  {
+    san: 'b5',
+    evalScore: '+0.6',
+    classification: 'best',
+    explanation: 'Immediate counterplay on the queenside, threatening ...b4 to dislodge the c3-knight.',
+  },
+  {
+    san: 'g5',
+    evalScore: '+0.7',
+    classification: 'best',
+    explanation: 'Drives Black’s knight away from its best defensive post on f6.',
+  },
+  {
+    san: 'b4',
+    evalScore: '+0.7',
+    classification: 'best',
+    explanation: 'Counter-attacking White’s c3-knight before retreating the f6-knight.',
+  },
+  {
+    san: 'Nd5',
+    evalScore: '+0.9',
+    classification: 'best',
+    explanation: 'Plants the knight powerfully on the d5 outpost.',
+  },
+  {
+    san: 'Nxd5',
+    evalScore: '+0.8',
+    classification: 'best',
+    explanation: 'Eliminates the dominant central knight immediately.',
+  },
+  {
+    san: 'exd5',
+    evalScore: '+0.9',
+    classification: 'best',
+    explanation: 'Recaptures with tempo against the e6-bishop and seals the d5 wedge.',
+  },
+  {
+    san: 'Bf5',
+    evalScore: '+0.9',
+    classification: 'best',
+    explanation: 'Activates the bishop along the h7-b1 diagonal targeting c2.',
+  },
+  {
+    san: 'Kb1',
+    evalScore: '+0.9',
+    classification: 'best',
+    explanation: '15. Kb1! Prophylactic queenside king move stepping off the c-file and defending a2.',
+  },
+  {
+    san: 'a5',
+    evalScore: '+0.9',
+    classification: 'good',
+    explanation: 'Pushes the a-pawn to support ...a4 against the b3-knight.',
+  },
+  {
+    san: 'Bd3',
+    evalScore: '+1.0',
+    classification: 'best',
+    explanation: 'Neutralizes Black’s active light-squared bishop on f5.',
+  },
+  {
+    san: 'Bxd3',
+    evalScore: '+0.9',
+    classification: 'best',
+    explanation: 'Trades off the bishops to relieve pressure.',
+  },
+  {
+    san: 'Qxd3',
+    evalScore: '+1.0',
+    classification: 'best',
+    explanation: 'Centralizes the Queen with eyes on both h7 and the queenside.',
+  },
+  {
+    san: 'Bxg5',
+    evalScore: '+1.6',
+    evalDelta: '+0.6',
+    classification: 'inaccuracy',
+    bestAlternative: '17... a4 (+0.9)',
+    tacticalThreat: 'Opens the g-file directly against Black’s castled king.',
+    explanation: '17...Bxg5?! is greedy—it opens the g-file and surrenders dark-square control around Black’s king.',
+  },
+  {
+    san: 'Bxg5',
+    evalScore: '+1.6',
+    classification: 'best',
+    explanation: 'Draws the Black queen out and loosens the d6 and e5 pawns.',
+  },
+  {
+    san: 'Qxg5',
+    evalScore: '+1.6',
+    classification: 'best',
+    explanation: 'Forced recapture.',
+  },
+  {
+    san: 'Rhg1',
+    evalScore: '+1.9',
+    classification: 'best',
+    explanation: 'Seizes the half-open g-file with tempo against the Black queen.',
+  },
+  {
+    san: 'Qf6',
+    evalScore: '+2.4',
+    evalDelta: '+0.5',
+    classification: 'mistake',
+    bestAlternative: '19... Qh6 (+1.8)',
+    tacticalThreat: 'Allows White to reroute the b3-knight via d2 to e4 with tempo.',
+    explanation: '19...Qf6? steps onto a vulnerable square where White can coordinate Nd2-e4 with tempo.',
+  },
+  {
+    san: 'Nd2',
+    evalScore: '+3.1',
+    evalDelta: '+0.7',
+    classification: 'brilliant',
+    explanation: '20. Nd2!! Reroutes the b3-knight toward the dominant e4 outpost while keeping full rook pressure.',
+  },
+  {
+    san: 'Nc5',
+    evalScore: '+3.2',
+    classification: 'good',
+    explanation: 'Attacks the White queen on d3 to gain counter-tempo.',
+  },
+  {
+    san: 'Qe3',
+    evalScore: '+3.3',
+    classification: 'best',
+    explanation: 'Sidesteps the knight attack while maintaining pressure on e5 and g5.',
+  },
+  {
+    san: 'Rfc8',
+    evalScore: '+5.9',
+    evalDelta: '+2.6',
+    classification: 'blunder',
+    bestAlternative: '21... Qf4 (+3.1)',
+    tacticalThreat: 'Leaves the f6-queen and kingside undefended against 22. Ne4!',
+    explanation: '21...Rfc8?? leaves the kingside undefended against 22. Ne4! and a decisive g-file invasion.',
+  },
+  {
+    san: 'Ne4',
+    evalScore: '+6.4',
+    classification: 'best',
+    explanation: '22. Ne4! Jumps into e4 with tempo on the Black queen and c5-knight.',
+  },
+  {
+    san: 'Nxe4',
+    evalScore: '+6.5',
+    classification: 'best',
+    explanation: 'Forced capture to avoid losing material immediately.',
+  },
+  {
+    san: 'fxe4',
+    evalScore: '+6.6',
+    classification: 'best',
+    explanation: 'Opens the f-file for the d1-rook to join the decisive kingside attack.',
+  },
+];
+
+function buildFeaturedMatchAnalysis(): FullMatchAnalysis {
+  const chess = new Chess();
+  const plies: AnalyzedPly[] = [];
+
+  rawMoves.forEach((seed, index) => {
+    const moveObj = chess.move(seed.san);
+    const fen = chess.fen();
+    const moveNumber = Math.floor(index / 2) + 1;
+    const color: 'white' | 'black' = index % 2 === 0 ? 'white' : 'black';
+    const notation =
+      color === 'white' ? `${moveNumber}. ${seed.san}` : `${moveNumber}... ${seed.san}`;
+
+    plies.push({
+      plyIndex: index,
+      moveNumber,
+      color,
+      notation,
+      fromSquare: moveObj ? moveObj.from : 'e2',
+      toSquare: moveObj ? moveObj.to : 'e4',
+      fen,
+      evalScore: seed.evalScore,
+      evalDelta: seed.evalDelta,
+      classification: seed.classification,
+      explanation: seed.explanation,
+      bestAlternative: seed.bestAlternative,
+      tacticalThreat: seed.tacticalThreat,
+    });
+  });
+
+  return {
+    id: 'featured-najdorf-english-attack',
+    whitePlayer: { name: 'Hikaru', rating: 2875, title: 'GM' },
+    blackPlayer: { name: 'viktor_k', rating: 2690, title: 'GM' },
+    event: 'Chess.com Rapid Arena • Sicilian Najdorf (B90)',
+    timeControl: 'Rapid 10+0',
+    result: '1-0',
+    accuracy: { white: 94.2, black: 78.4 },
+    plies,
+    coachReport: {
+      verdict: 'Clinical English Attack — Punishing 17...Bxg5?! and 21...Rfc8??',
+      summary:
+        'White executed a model Sicilian Najdorf English Attack (6. Be3, 8. f3, 10. O-O-O, 15. Kb1!). After Black’s greedy 17...Bxg5?! opened the g-file and 19...Qf6? stepped into a knight tempo, White’s 20. Nd2!! and 22. Ne4! forced a decisive kingside breakthrough.',
+      tacticalLeaks: [
+        {
+          moveNumber: 17,
+          color: 'black',
+          notation: '17... Bxg5?!',
+          evalDrop: 0.6,
+          classification: 'inaccuracy',
+          motif: 'Opening King-File Line',
+          refutation: '17... a4 (+0.9)',
+        },
+        {
+          moveNumber: 19,
+          color: 'black',
+          notation: '19... Qf6?',
+          evalDrop: 0.5,
+          classification: 'mistake',
+          motif: 'Exposed Queen Target',
+          refutation: '19... Qh6 (+1.8)',
+        },
+        {
+          moveNumber: 21,
+          color: 'black',
+          notation: '21... Rfc8??',
+          evalDrop: 2.6,
+          classification: 'blunder',
+          motif: 'Uncontested Central Outpost (e4)',
+          refutation: '21... Qf4 (+3.1)',
+        },
+      ],
+      phaseBreakdown: {
+        opening: {
+          accuracy: 96.4,
+          commentary:
+            'Accurate English Attack setup (6. Be3, 8. f3, 10. O-O-O) followed by prophylactic 15. Kb1! stepping off the c-file.',
+        },
+        middlegame: {
+          accuracy: 92.8,
+          commentary:
+            'Immediate exploitation of the open g-file with 19. Rhg1 and the knight reroute 20. Nd2!! -> 22. Ne4!.',
+        },
+        endgame: {
+          accuracy: 93.5,
+          commentary:
+            'After 23. fxe4 (+6.6), White commands both the g-file and f-file with an unstoppable heavy-piece attack.',
+        },
       },
-      {
-        moveNumber: 15,
-        color: 'white',
-        notation: '15. Kh1?!',
-        evalDrop: 0.6,
-        classification: 'inaccuracy',
-        motif: 'Passive king step wasting tempo while king was in no direct diagonal danger',
-        refutation: '15. f4! immediately expanded kingside spatial control.',
+      timeDiscipline: {
+        assessment: 'Balanced move pacing across the critical middlegame transition (Moves 15–23).',
+        advice: 'Never capture flank pawns in front of your castled king when it opens a rook file for the opponent.',
       },
-    ],
-    phaseBreakdown: {
-      opening: {
-        accuracy: 94,
-        commentary: 'Mainline Sicilian Najdorf theory executed with high precision.',
-      },
-      middlegame: {
-        accuracy: 78,
-        commentary: 'Severe calculation lapse under tactical tension on Move 20.',
-      },
-      endgame: {
-        accuracy: 91,
-        commentary: 'Clinical king and rook conversion with zero counterplay allowed.',
-      },
+      arbiterDirectives: [
+        'Play prophylactic king safety moves (15. Kb1!) in opposite-side castling before launching final piece sacrifices.',
+        'Reroute passive knights (20. Nd2!! -> 22. Ne4!) once central outposts become available.',
+        'Avoid greedy pawn captures like 17...Bxg5?! that open the g-file directly toward your own king.',
+      ],
     },
-    timeDiscipline: {
-      assessment: '38.4s freeze on Move 20 followed by instantaneous blunder execution.',
-      timePanicMove: 20,
-      advice: 'When spending more than 25 seconds in Blitz, enforce a mandatory check: identify candidate move, check checks and captures, and do not execute an uncalculated novelty.',
-    },
-    arbiterDirectives: [
-      'Stop Rushing After Long Thinks: A long think followed by an impulsive move is the #1 rating bleed at the 1800 level.',
-      'Audit Loose Pieces: Ensure Be3 is guarded before giving Black d5 counterplay.',
-      'Ruthless Conversion: When holding +6.0, play concrete simplifications (Nd5), not ambiguous developing moves.',
-    ],
-  },
-};
+  };
+}
+
+export const FEATURED_MATCH_ANALYSIS: FullMatchAnalysis = buildFeaturedMatchAnalysis();
+export const featuredMatchAnalysis: FullMatchAnalysis = FEATURED_MATCH_ANALYSIS;

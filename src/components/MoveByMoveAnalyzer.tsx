@@ -543,7 +543,7 @@ export function MoveByMoveAnalyzer({
               onClick={() =>
                 onOpenShare({
                   title: `${matchAnalysis.whitePlayer.name} vs ${matchAnalysis.blackPlayer.name}`,
-                  description: `Game Analysis (${matchAnalysis.event}): ${matchAnalysis.result}. Analyzed ${matchAnalysis.plies.length} plies with deep Stockfish engine on ChessPulse.`,
+                  description: `Game Analysis (${matchAnalysis.event}): ${matchAnalysis.result}. Analyzed ${matchAnalysis.plies.length} plies with the ChessPulse Tactical Heuristic Engine.`,
                   type: 'match',
                 })
               }
@@ -808,7 +808,7 @@ export function MoveByMoveAnalyzer({
 
                   {currentPly.bestAlternative && (
                     <div className="text-slate-800 flex items-center justify-between gap-2 pt-0.5">
-                      <span className="font-semibold text-slate-700">Stockfish Recommendation:</span>
+                      <span className="font-semibold text-slate-700">Heuristic Recommendation:</span>
                       <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
                         {currentPly.bestAlternative}
                       </span>
@@ -915,7 +915,7 @@ export function MoveByMoveAnalyzer({
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Evaluation Engine</div>
-                <div className="text-xs font-mono font-bold text-emerald-400">Stockfish 16.1 · Depth 24</div>
+                <div className="text-xs font-mono font-bold text-emerald-400">ChessPulse Tactical Heuristic Engine</div>
               </div>
             </div>
           </div>

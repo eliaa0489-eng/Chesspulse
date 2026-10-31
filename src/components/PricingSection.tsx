@@ -36,7 +36,7 @@ export function PricingSection({ onSelectPlan }: PricingSectionProps) {
       highlighted: false,
       features: [
         { text: '3 Deep Match Analyses / month' },
-        { text: 'Basic Stockfish Evaluation Bar' },
+        { text: 'Basic Tactical Heuristic Evaluation Bar' },
         { text: 'Standard Puzzle Access' },
       ],
     },
@@ -53,7 +53,7 @@ export function PricingSection({ onSelectPlan }: PricingSectionProps) {
         { text: 'Unlimited Deep Match Analyses', emphasized: true },
         { text: 'Personal Blunder Bank & Custom Puzzles', emphasized: true },
         { text: 'Full What-If Sandbox & Move-by-Move Annotations (Brilliant !!, Blunders ??)' },
-        { text: 'Priority Stockfish 16.1 Cloud Processing' },
+        { text: 'Priority Tactical Heuristic Engine Processing' },
       ],
     },
     {
@@ -99,7 +99,7 @@ export function PricingSection({ onSelectPlan }: PricingSectionProps) {
           Built for Every Rating Bracket
         </h2>
         <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-          Start analyzing your Chess.com archive for free, or unlock unlimited Stockfish 16.1 blunder recovery and custom tactical puzzles.
+          Start analyzing your Chess.com archive for free, or unlock unlimited ChessPulse Tactical Heuristic Engine blunder recovery and custom tactical puzzles.
         </p>
       </div>
 

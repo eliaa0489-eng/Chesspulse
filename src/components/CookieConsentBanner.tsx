@@ -114,7 +114,7 @@ export function CookieConsentBanner({ onNavigateLegal }: CookieConsentBannerProp
                       Anonymous Performance Telemetry
                     </span>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Helps optimize Stockfish load &amp; FCP speed
+                      Helps optimize Heuristic Engine load &amp; FCP speed
                     </span>
                   </div>
                   <button

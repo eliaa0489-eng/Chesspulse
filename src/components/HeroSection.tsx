@@ -35,9 +35,9 @@ const TELEMETRY_PHASES: TelemetryPhasePreset[] = [
     id: 'center',
     label: 'Center Control',
     shortLabel: 'Center',
-    centipawn: '+1.45 cp',
-    depth: 'Depth 34/40',
-    nodesPerSec: '5.2M n/s',
+    centipawn: '+1.45 eval',
+    depth: '1-Ply Heuristic',
+    nodesPerSec: 'Pattern Scan',
     winPct: 68.4,
     drawPct: 24.1,
     lossPct: 7.5,
@@ -49,9 +49,9 @@ const TELEMETRY_PHASES: TelemetryPhasePreset[] = [
     id: 'opening',
     label: 'Opening Book',
     shortLabel: 'Opening',
-    centipawn: '+0.42 cp',
-    depth: 'Depth 36/40',
-    nodesPerSec: '6.1M n/s',
+    centipawn: '+0.42 eval',
+    depth: '1-Ply Heuristic',
+    nodesPerSec: 'Pattern Scan',
     winPct: 54.8,
     drawPct: 36.2,
     lossPct: 9.0,
@@ -63,9 +63,9 @@ const TELEMETRY_PHASES: TelemetryPhasePreset[] = [
     id: 'kingsafety',
     label: 'King Safety',
     shortLabel: 'King Safety',
-    centipawn: '+2.85 cp',
-    depth: 'Depth 32/40',
-    nodesPerSec: '4.9M n/s',
+    centipawn: '+2.85 eval',
+    depth: '1-Ply Heuristic',
+    nodesPerSec: 'Pattern Scan',
     winPct: 84.2,
     drawPct: 11.5,
     lossPct: 4.3,
@@ -75,17 +75,17 @@ const TELEMETRY_PHASES: TelemetryPhasePreset[] = [
   },
   {
     id: 'endgame',
-    label: 'Endgame Tablebase',
+    label: 'Endgame Precision',
     shortLabel: 'Endgame',
-    centipawn: '+4.60 cp',
-    depth: 'Syzygy 7-Piece',
-    nodesPerSec: '8.4M n/s',
+    centipawn: '+4.60 eval',
+    depth: '1-Ply Heuristic',
+    nodesPerSec: 'Pattern Scan',
     winPct: 96.4,
     drawPct: 3.1,
     lossPct: 0.5,
     acpl: '4.1 ACPL',
     principalVariation: '41. Ke5! Rf7 42. Rd6+ Ke7',
-    classificationTag: 'Tablebase ★',
+    classificationTag: 'Winning ★',
   },
 ];
 
@@ -401,7 +401,7 @@ export function HeroSection({ onAnalyzeUsername }: HeroSectionProps) {
 
         {/* Shortened Subhead — 10% Bigger & High Contrast */}
         <p className="text-base sm:text-lg md:text-[20px] text-slate-700 max-w-xl mx-auto leading-snug font-medium text-balance">
-          Turn your real Chess.com blunders into custom Stockfish puzzles.
+          Turn your real Chess.com blunders into custom tactical recovery puzzles.
         </p>
 
         {/* One Clear Primary Call to Action — Chess.com Handle Analyzer */}
@@ -527,7 +527,7 @@ export function HeroSection({ onAnalyzeUsername }: HeroSectionProps) {
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-wider">
-                      NNUE
+                      PULSE
                     </span>
                   </div>
                 </div>
@@ -548,7 +548,7 @@ export function HeroSection({ onAnalyzeUsername }: HeroSectionProps) {
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                       <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
-                        Stockfish 16.1 Telemetry
+                        Tactical Heuristic Engine
                       </span>
                     </div>
                     <div className="flex items-baseline gap-2">

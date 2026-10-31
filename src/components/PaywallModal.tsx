@@ -75,7 +75,7 @@ export function PaywallModal({
                 </h3>
 
                 <p className="text-sm text-slate-600 leading-relaxed font-normal">
-                  ChessPulse Pro is currently in <span className="font-bold text-slate-900">free public beta</span>. Unlock unlimited Move-by-Move Stockfish analyses, personalized blunder puzzles, and full repertoire telemetry at <span className="font-bold text-emerald-700">0,00 €</span> during our launch phase—no credit card or payment required.
+                  ChessPulse Pro is currently in <span className="font-bold text-slate-900">free public beta</span>. Unlock unlimited Move-by-Move Tactical Heuristic Engine analyses, personalized blunder puzzles, and full repertoire telemetry at <span className="font-bold text-emerald-700">0,00 €</span> during our launch phase—no credit card or payment required.
                 </p>
               </div>
 
@@ -85,7 +85,7 @@ export function PaywallModal({
                   <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">
                     ✓
                   </div>
-                  <span className="font-semibold text-slate-900">Unlimited Move-by-Move Stockfish Centipawn Evaluations</span>
+                  <span className="font-semibold text-slate-900">Unlimited Move-by-Move Tactical Heuristic Evaluations</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">

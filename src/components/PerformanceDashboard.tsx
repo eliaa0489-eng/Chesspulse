@@ -437,8 +437,8 @@ export function PerformanceDashboard({
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
             {isPersonalMode
-              ? `Authenticated personal telemetry for @${liveStats?.username || activeHandle} — computed directly from your real Chess.com games and Stockfish centipawn evaluations.`
-              : `Real-time centipawn accuracy and ELO progression computed directly from @${liveStats?.username || activeHandle}'s official Chess.com archive.`}
+              ? `Authenticated personal telemetry for @${liveStats?.username || activeHandle} — computed directly from your real Chess.com games and the ChessPulse Tactical Heuristic Engine.`
+              : `Real-time tactical accuracy and ELO progression computed directly from @${liveStats?.username || activeHandle}'s official Chess.com archive.`}
           </p>
         </div>
 

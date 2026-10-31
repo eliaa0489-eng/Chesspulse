@@ -1,5 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, ShieldCheck, TrendingUp, AlertTriangle, ArrowRight, Sparkles, User, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  X,
+  ShieldCheck,
+  TrendingUp,
+  AlertTriangle,
+  ArrowRight,
+  Sparkles,
+  User,
+  RefreshCw,
+  AlertCircle,
+} from 'lucide-react';
 import { fetchChessComUserData } from '../services/chessComApi';
 import { PlayerProfile } from '../types/chess';
 import { EvalBadge } from './EvalBadge';
@@ -11,35 +21,59 @@ interface AnalysisModalProps {
   onSelectPuzzle: (puzzleIndex: number) => void;
 }
 
-export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: AnalysisModalProps) {
-  const [stage, setStage] = useState<'connecting' | 'scanning' | 'extracting' | 'complete'>('connecting');
+export function AnalysisModal({
+  username,
+  isOpen,
+  onClose,
+  onSelectPuzzle,
+}: AnalysisModalProps) {
+  const [stage, setStage] = useState<'connecting' | 'scanning' | 'extracting' | 'complete' | 'error'>(
+    'connecting'
+  );
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen || !username) return;
+  const runAnalysis = useCallback(() => {
+    if (!username) return;
 
-    setLoading(true);
     setStage('connecting');
     setProfile(null);
+    setErrorMessage(null);
 
-    // Simulate real pipeline steps while fetching live API data
-    const timer1 = setTimeout(() => setStage('scanning'), 700);
-    const timer2 = setTimeout(() => setStage('extracting'), 1500);
+    const timer1 = setTimeout(() => {
+      setStage((prev) => (prev === 'error' ? 'error' : 'scanning'));
+    }, 500);
+    const timer2 = setTimeout(() => {
+      setStage((prev) => (prev === 'error' ? 'error' : 'extracting'));
+    }, 1000);
 
-    fetchChessComUserData(username).then((data) => {
-      setTimeout(() => {
+    fetchChessComUserData(username)
+      .then((data) => {
         setProfile(data);
         setStage('complete');
-        setLoading(false);
-      }, 2200);
-    });
+      })
+      .catch((err: unknown) => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        const msg =
+          err instanceof Error
+            ? err.message
+            : `Unable to retrieve public Chess.com profile for "@${username}".`;
+        setErrorMessage(msg);
+        setStage('error');
+      });
 
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, [isOpen, username]);
+  }, [username]);
+
+  useEffect(() => {
+    if (!isOpen || !username) return;
+    const cleanup = runAnalysis();
+    return cleanup;
+  }, [isOpen, username, runAnalysis]);
 
   if (!isOpen) return null;
 
@@ -54,7 +88,7 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <h3 className="text-sm font-bold text-slate-900">
-              Chess.com Match Analysis Engine
+              ChessPulse Tactical Heuristic Engine
             </h3>
           </div>
           <button
@@ -67,7 +101,38 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto flex-1">
-          {stage !== 'complete' ? (
+          {stage === 'error' ? (
+            <div className="py-10 px-4 text-center max-w-md mx-auto space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600">
+                <AlertCircle className="w-7 h-7" />
+              </div>
+              <div className="space-y-1.5">
+                <h4 className="text-lg font-extrabold text-slate-900">
+                  Profile Not Found or Unavailable
+                </h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {errorMessage}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={runAnalysis}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Scan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : stage !== 'complete' ? (
             /* Pipeline Loading Steps */
             <div className="py-12 space-y-6 text-center max-w-md mx-auto">
               <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto text-emerald-600 shadow-xs">
@@ -79,41 +144,65 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                   Analyzing @{username}...
                 </h4>
                 <p className="text-xs text-slate-500">
-                  Querying official Chess.com API and running centipawn blunder detection
+                  Querying official Chess.com API via proxy and running Tactical Heuristic blunder detection
                 </p>
               </div>
 
               <div className="space-y-3 text-left pt-2">
                 <div className="flex items-center gap-3 text-xs">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    stage === 'connecting' ? 'bg-emerald-600 text-white animate-pulse' : 'bg-emerald-100 text-emerald-800'
-                  }`}>
+                  <div
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      stage === 'connecting'
+                        ? 'bg-emerald-600 text-white animate-pulse'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
                     {stage === 'connecting' ? '1' : '✓'}
                   </div>
-                  <span className={stage === 'connecting' ? 'font-bold text-slate-900' : 'text-slate-600'}>
+                  <span
+                    className={
+                      stage === 'connecting' ? 'font-bold text-slate-900' : 'text-slate-600'
+                    }
+                  >
                     Connecting to Chess.com Public Player Endpoint
                   </span>
                 </div>
 
                 <div className="flex items-center gap-3 text-xs">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    stage === 'scanning' ? 'bg-emerald-600 text-white animate-pulse' : stage === 'extracting' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'
-                  }`}>
+                  <div
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      stage === 'scanning'
+                        ? 'bg-emerald-600 text-white animate-pulse'
+                        : stage === 'extracting'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-400'
+                    }`}
+                  >
                     {stage === 'extracting' ? '✓' : '2'}
                   </div>
-                  <span className={stage === 'scanning' ? 'font-bold text-slate-900' : 'text-slate-600'}>
-                    Fetching 100 recent game PGNs & opening trees
+                  <span
+                    className={stage === 'scanning' ? 'font-bold text-slate-900' : 'text-slate-600'}
+                  >
+                    Fetching recent game PGNs &amp; opening trees
                   </span>
                 </div>
 
                 <div className="flex items-center gap-3 text-xs">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    stage === 'extracting' ? 'bg-emerald-600 text-white animate-pulse' : 'bg-slate-100 text-slate-400'
-                  }`}>
+                  <div
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      stage === 'extracting'
+                        ? 'bg-emerald-600 text-white animate-pulse'
+                        : 'bg-slate-100 text-slate-400'
+                    }`}
+                  >
                     3
                   </div>
-                  <span className={stage === 'extracting' ? 'font-bold text-slate-900' : 'text-slate-400'}>
-                    Filtering tactical blunders (Stockfish eval drop &gt; 2.0)
+                  <span
+                    className={
+                      stage === 'extracting' ? 'font-bold text-slate-900' : 'text-slate-400'
+                    }
+                  >
+                    Filtering tactical blunders (Heuristic eval drop &gt; 1.8)
                   </span>
                 </div>
               </div>
@@ -125,21 +214,12 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
               <div className="p-5 bg-[#F8FAF9] rounded-2xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
                   <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-xl overflow-hidden shadow-xs relative">
-                    {profile.avatar ? (
-                      <img
-                        src={profile.avatar}
-                        alt={profile.username}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <User className="w-7 h-7 text-emerald-400" />
-                    )}
+                    <User className="w-7 h-7 text-emerald-400" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="text-lg font-bold text-slate-900">
-                        {profile.username}
+                        @{profile.username}
                       </h4>
                       {profile.title && (
                         <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-extrabold uppercase">
@@ -148,22 +228,26 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                       )}
                     </div>
                     <p className="text-xs text-slate-500">
-                      Verified Chess.com Profile • {profile.totalGames} Games Monitored
+                      Verified Chess.com Profile • {profile.totalGames.toLocaleString()} Games Monitored
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 text-right">
                   <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">Blitz</span>
+                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                      Blitz
+                    </span>
                     <span className="text-sm font-extrabold text-slate-900 tabular-nums">
-                      {profile.blitzRating}
+                      {profile.blitzRating || '—'}
                     </span>
                   </div>
                   <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">Rapid</span>
+                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                      Rapid
+                    </span>
                     <span className="text-sm font-extrabold text-slate-900 tabular-nums">
-                      {profile.rapidRating}
+                      {profile.rapidRating || '—'}
                     </span>
                   </div>
                 </div>
@@ -173,13 +257,15 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-slate-500 font-medium">Tactical Accuracy</span>
+                    <span className="text-xs text-slate-500 font-medium">Win Rate</span>
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
                   </div>
                   <span className="text-xl font-extrabold text-slate-900 tabular-nums">
-                    {profile.tacticalAccuracy}%
+                    {profile.overallWinRate}%
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5">Top 18% of rating group</span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                    Verified career win ratio
+                  </span>
                 </div>
 
                 <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
@@ -190,18 +276,24 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                   <span className="text-xl font-extrabold text-slate-900 tabular-nums">
                     {profile.blunderRate}%
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5">~1.2 blunders per match</span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                    Heuristic blunder scan
+                  </span>
                 </div>
 
                 <div className="p-3.5 bg-rose-50/60 rounded-xl border border-rose-200">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-rose-900 font-medium">Time Trouble Leak</span>
-                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">Action</span>
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                      Action
+                    </span>
                   </div>
                   <span className="text-xl font-extrabold text-rose-900 tabular-nums">
                     {profile.timeTroubleMoveRange}
                   </span>
-                  <span className="text-[11px] text-rose-700 block mt-0.5">72% of losses occur here</span>
+                  <span className="text-[11px] text-rose-700 block mt-0.5">
+                    Critical middlegame window
+                  </span>
                 </div>
               </div>
 
@@ -210,7 +302,7 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>3 Personalized Training Drills Generated:</span>
+                    <span>{profile.recentPuzzles.length} Personalized Training Drills Generated:</span>
                   </div>
                   <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     Ready to Play
@@ -224,8 +316,6 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                       onClick={() => {
                         onSelectPuzzle(idx);
                         onClose();
-                        const el = document.getElementById('interactive-puzzles');
-                        if (el) el.scrollIntoView({ behavior: 'smooth' });
                       }}
                       className="p-3 bg-white hover:bg-slate-50 rounded-xl border border-slate-200 hover:border-emerald-500 transition-all cursor-pointer flex items-center justify-between gap-3 group"
                     >
@@ -240,7 +330,9 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
                           <div className="flex items-center gap-1.5 text-[11px] text-slate-500 pt-0.5">
                             <span>{puzzle.opening}</span>
                             <span>•</span>
-                            <span className="font-mono font-semibold text-slate-700">{puzzle.blunderedMove}</span>
+                            <span className="font-mono font-semibold text-slate-700">
+                              {puzzle.blunderedMove}
+                            </span>
                             <EvalBadge classification="blunder" size="xs" showLabel={false} />
                           </div>
                         </div>
@@ -268,13 +360,12 @@ export function AnalysisModal({ username, isOpen, onClose, onSelectPuzzle }: Ana
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
             <span className="text-xs text-slate-500 flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              100% Free Public Scan • No account required
+              100% Free Public Scan • Zero Mock Data
             </span>
             <button
               onClick={() => {
+                onSelectPuzzle(0);
                 onClose();
-                const el = document.getElementById('interactive-puzzles');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
               }}
               className="px-5 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-2 cursor-pointer transition-all shadow-sm shadow-emerald-700/20"
             >

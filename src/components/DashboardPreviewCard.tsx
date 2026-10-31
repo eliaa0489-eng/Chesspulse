@@ -316,7 +316,7 @@ export function DashboardPreviewCard({ onTryInteractivePuzzle }: DashboardPrevie
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           Continuous Background Engine
         </span>
-        <span className="font-mono text-[11px] text-slate-400">STOCKFISH 16.1 EVAL</span>
+        <span className="font-mono text-[11px] text-slate-400">TACTICAL HEURISTIC EVAL</span>
       </div>
     </div>
   );

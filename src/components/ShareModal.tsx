@@ -129,7 +129,7 @@ export function ShareModal({ isOpen, onClose, data }: ShareModalProps) {
                   ChessPulse Verified Record
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono">Stockfish 16.1</span>
+              <span className="text-[10px] text-slate-400 font-mono">Tactical Heuristic</span>
             </div>
 
             <h4 className="text-base font-extrabold text-white mb-1">{data.title}</h4>

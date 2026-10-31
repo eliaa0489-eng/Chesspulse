@@ -349,7 +349,7 @@ export default function App() {
                   Grandmaster Match &amp; Move Analyzer
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
-                  Inspect actual games played on Chess.com. Move classifications are strictly calculated from Stockfish centipawn evaluation drops.
+                  Inspect actual games played on Chess.com. Move classifications are strictly calculated from the ChessPulse Tactical Heuristic Engine.
                 </p>
               </div>
 

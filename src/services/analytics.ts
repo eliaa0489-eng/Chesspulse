@@ -1,186 +1,163 @@
-/**
- * Privacy-First, Consent-Aware Analytics & Dynamic SEO Manager for ChessPulse
- * Zero cross-site tracking cookies, zero PII storage, full GDPR / DSGVO compliance.
- */
+// Privacy-First Telemetry & Dynamic SEO Meta Manager for ChessPulse
+// Zero third-party cookies, zero external font/avatar tracking, DSGVO/GDPR compliant.
 
 export type CookieConsentChoice = 'all' | 'essential';
+
+export type AnalyticsEventName =
+  | 'page_view'
+  | 'profile_scans'
+  | 'puzzle_solves'
+  | 'user_handle_connected'
+  | 'plan_modal_opened'
+  | 'cookie_consent_accepted'
+  | 'web_vitals_ready'
+  | 'beta_waitlist';
 
 const CONSENT_STORAGE_KEY = 'chesspulse_cookie_consent';
 
 export function getCookieConsent(): CookieConsentChoice | null {
-  if (typeof window === 'undefined') return null;
   try {
-    const val = localStorage.getItem(CONSENT_STORAGE_KEY);
-    if (val === 'all' || val === 'essential') return val;
-    return null;
+    const raw = localStorage.getItem(CONSENT_STORAGE_KEY);
+    if (!raw) return null;
+    if (raw === 'all' || raw === 'essential') return raw;
+    const parsed = JSON.parse(raw);
+    if (parsed?.choice === 'all' || parsed?.choice === 'essential') {
+      return parsed.choice;
+    }
+    return parsed?.accepted ? 'all' : 'essential';
   } catch {
     return null;
   }
 }
 
 export function setCookieConsent(choice: CookieConsentChoice): void {
-  if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(CONSENT_STORAGE_KEY, choice);
+    localStorage.setItem(
+      CONSENT_STORAGE_KEY,
+      JSON.stringify({
+        choice,
+        accepted: choice === 'all',
+        updatedAt: new Date().toISOString(),
+      })
+    );
   } catch {
-    // Ignore storage quota errors
+    // Ignore storage errors in restricted browsing modes
   }
   if (choice === 'all') {
-    trackAnalyticsEvent('cookie_consent_accepted', { mode: 'all' });
+    trackAnalyticsEvent('cookie_consent_accepted', { choice });
   }
 }
 
-/**
- * Sends a lightweight, anonymous telemetry event to the backend proxy
- * only if the user has opted into analytics ('all') or if it is an anonymous
- * core performance health metric.
- */
+export function hasAnalyticsConsent(): boolean {
+  return getCookieConsent() === 'all';
+}
+
 export function trackAnalyticsEvent(
-  eventName: string,
-  metadata?: Record<string, string | number | boolean>
+  event: AnalyticsEventName,
+  meta?: Record<string, string | number | boolean>
 ): void {
-  if (typeof window === 'undefined') return;
-  const consent = getCookieConsent();
-  // Respect user privacy if they selected 'essential' only
-  if (consent === 'essential') return;
+  if (
+    event !== 'cookie_consent_accepted' &&
+    event !== 'page_view' &&
+    !hasAnalyticsConsent()
+  ) {
+    return;
+  }
 
   try {
-    const payload = JSON.stringify({
-      event: eventName.slice(0, 48),
-      path: window.location.pathname,
-      meta: metadata || {},
-      ts: Date.now(),
+    fetch('/api/analytics/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, meta, timestamp: Date.now() }),
+      keepalive: true,
+    }).catch(() => {
+      // Non-blocking telemetry
     });
-
-    if (navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: 'application/json' });
-      navigator.sendBeacon('/api/analytics/event', blob);
-    } else {
-      fetch('/api/analytics/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-        keepalive: true,
-      }).catch(() => {
-        // Silent fail
-      });
-    }
   } catch {
-    // Silent fail
+    // Ignore telemetry network errors
   }
 }
 
-/**
- * Reports initial First Contentful Paint (FCP) and DOM Interactive speed
- * to verify sub-second load performance.
- */
 export function initPerformanceTelemetry(): void {
   if (typeof window === 'undefined' || !('performance' in window)) return;
 
-  try {
-    window.addEventListener(
-      'load',
-      () => {
-        setTimeout(() => {
+  window.addEventListener(
+    'load',
+    () => {
+      setTimeout(() => {
+        try {
           const navEntry = performance.getEntriesByType(
             'navigation'
           )[0] as PerformanceNavigationTiming | undefined;
           const paintEntries = performance.getEntriesByType('paint');
-          const fcpEntry = paintEntries.find((p) => p.name === 'first-contentful-paint');
+          const fcpEntry = paintEntries.find(
+            (entry) => entry.name === 'first-contentful-paint'
+          );
 
           const fcpMs = fcpEntry ? Math.round(fcpEntry.startTime) : 0;
-          const domInteractiveMs = navEntry ? Math.round(navEntry.domInteractive) : 0;
+          const domInteractiveMs = navEntry
+            ? Math.round(navEntry.domInteractive)
+            : 0;
 
-          if (getCookieConsent() === 'all') {
+          if (hasAnalyticsConsent()) {
             trackAnalyticsEvent('web_vitals_ready', {
               fcpMs,
               domInteractiveMs,
             });
           }
-        }, 500);
-      },
-      { once: true }
-    );
-  } catch {
-    // Safe fallback
-  }
+        } catch {
+          // Safe fallback
+        }
+      }, 1200);
+    },
+    { once: true }
+  );
 }
 
-export interface PageSeoConfig {
-  title: string;
-  description: string;
-  canonicalPath: string;
-}
-
-const ROUTE_SEO_MAP: Record<string, PageSeoConfig> = {
+const PAGE_META: Record<
+  'home' | 'puzzles' | 'impressum' | 'datenschutz' | 'notfound',
+  { title: string; description: string }
+> = {
   home: {
-    title: 'ChessPulse — Stop Blundering. Train Your Own Mistakes.',
+    title: 'ChessPulse — Tactical Chess Analysis & Blunder Recovery',
     description:
-      'Connect your Chess.com handle to unlock Stockfish 16.1 centipawn telemetry, opening phase audits, and personalized tactical puzzles generated from your real blunders.',
-    canonicalPath: '/',
+      'Connect your Chess.com account to analyze recent matches, uncover tactical blunders with the ChessPulse Tactical Heuristic Engine, and solve personalized puzzles from your own games.',
   },
   puzzles: {
-    title: 'Personal Blunder Puzzles Studio — ChessPulse Tactical Trainer',
+    title: 'Personal Blunder Bank & Tactical Puzzles — ChessPulse',
     description:
-      'Filter and solve custom tactical chess puzzles (Forks, Pins, Skewers, Back-rank Mates) generated directly from your own Chess.com match blunders.',
-    canonicalPath: '/puzzles',
+      'Train on interactive tactical puzzles generated directly from your own Chess.com mistakes and blunders.',
   },
   impressum: {
     title: 'Impressum & Legal Disclosure (§ 5 DDG) — ChessPulse',
     description:
-      'Legal notice, contact information, and non-affiliation disclosure for the ChessPulse chess analysis and tactical training platform.',
-    canonicalPath: '/impressum',
+      'Legal disclosure, maintainer contact details, and non-affiliation notice for the ChessPulse public beta.',
   },
   datenschutz: {
-    title: 'Privacy Policy & Data Protection (GDPR / DSGVO) — ChessPulse',
+    title: 'Privacy Policy & Data Protection (DSGVO / GDPR) — ChessPulse',
     description:
-      'Learn how ChessPulse protects your privacy with zero-password public API sync, ephemeral server-side caching, and strict GDPR compliance.',
-    canonicalPath: '/datenschutz',
+      'Zero-password architecture, server-side proxy data protection, and GDPR compliance documentation for ChessPulse.',
   },
   notfound: {
-    title: '404 Position Out of Book — Page Not Found | ChessPulse',
+    title: 'Page Not Found (404) — ChessPulse',
     description:
-      'The requested chess analysis coordinate could not be found. Return to the ChessPulse overview or analyze your Chess.com profile.',
-    canonicalPath: '/404',
+      'The requested coordinate or page could not be found on ChessPulse.',
   },
 };
 
-/**
- * Dynamically updates document title, meta description, Open Graph tags,
- * Twitter card tags, and canonical link when routes change.
- */
-export function updatePageSeo(route: string): void {
+export function updatePageSeo(
+  view: 'home' | 'puzzles' | 'impressum' | 'datenschutz' | 'notfound'
+): void {
   if (typeof document === 'undefined') return;
-  const seo = ROUTE_SEO_MAP[route] || ROUTE_SEO_MAP.home;
+  const meta = PAGE_META[view] || PAGE_META.home;
+  document.title = meta.title;
 
-  document.title = seo.title;
+  const descEl = document.querySelector('meta[name="description"]');
+  if (descEl) descEl.setAttribute('content', meta.description);
 
-  const setMeta = (selector: string, attr: 'content', value: string) => {
-    const el = document.querySelector(selector);
-    if (el) {
-      el.setAttribute(attr, value);
-    }
-  };
+  const ogTitleEl = document.querySelector('meta[property="og:title"]');
+  if (ogTitleEl) ogTitleEl.setAttribute('content', meta.title);
 
-  setMeta('meta[name="description"]', 'content', seo.description);
-  setMeta('meta[property="og:title"]', 'content', seo.title);
-  setMeta('meta[property="og:description"]', 'content', seo.description);
-  setMeta('meta[name="twitter:title"]', 'content', seo.title);
-  setMeta('meta[name="twitter:description"]', 'content', seo.description);
-
-  const origin =
-    typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'https://chesspulse.app';
-  const fullUrl = `${origin}${seo.canonicalPath}`;
-
-  setMeta('meta[property="og:url"]', 'content', fullUrl);
-
-  let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
-  if (!canonical) {
-    canonical = document.createElement('link');
-    canonical.setAttribute('rel', 'canonical');
-    document.head.appendChild(canonical);
-  }
-  canonical.setAttribute('href', fullUrl);
+  const ogDescEl = document.querySelector('meta[property="og:description"]');
+  if (ogDescEl) ogDescEl.setAttribute('content', meta.description);
 }

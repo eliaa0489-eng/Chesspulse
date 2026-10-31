@@ -12,8 +12,8 @@ export function FaqSection() {
       category: 'Security',
     },
     {
-      q: 'How is this better than Stockfish or standard analysis?',
-      a: 'Stockfish analyzes a single move in isolation and tells you +1.4 or -3.2. ChessPulse spots macro-patterns across hundreds of your games, isolates your recurring blind spots, and converts your actual missed wins into interactive, playable training drills you will remember next time you play.',
+      q: 'How does the ChessPulse Tactical Heuristic Engine work?',
+      a: 'Instead of evaluating a single move in isolation, our Lightweight Pattern Analyzer scans macro-patterns across your games, isolates recurring tactical blind spots, and converts your actual missed opportunities into interactive, playable training drills you will remember next time you play.',
       category: 'Training',
     },
     {
@@ -70,7 +70,7 @@ export function FaqSection() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search questions (password, mobile, Stockfish...)"
+              placeholder="Search questions (password, mobile, engine...)"
               className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-all"
             />
           </div>
@@ -115,7 +115,7 @@ export function FaqSection() {
 
         {filteredFaqs.length === 0 && (
           <div className="text-center py-8 text-xs text-slate-500">
-            No questions matched "{searchQuery}". Try searching for "API", "mobile", or "Stockfish".
+            No questions matched "{searchQuery}". Try searching for "API", "mobile", or "engine".
           </div>
         )}
       </div>

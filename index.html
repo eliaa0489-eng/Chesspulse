@@ -1,58 +1,53 @@
 <!doctype html>
-<html lang="en" class="scroll-smooth bg-[#FFFFFF] text-[#0F172A] antialiased selection:bg-[#DCFCE7] selection:text-[#065F46]">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ChessPulse — Stop Blundering. Train Your Own Mistakes.</title>
+    <title>ChessPulse — Tactical Chess Analysis &amp; Blunder Recovery</title>
     <meta
       name="description"
-      content="Connect your Chess.com handle to unlock Stockfish 16.1 centipawn telemetry, opening phase audits, and personalized tactical puzzles generated from your real blunders."
+      content="Connect your Chess.com account to analyze recent matches, uncover tactical blunders with the ChessPulse Tactical Heuristic Engine, and solve personalized puzzles from your own games."
     />
     <meta
       name="keywords"
-      content="chess analysis, Stockfish 16.1 telemetry, Chess.com blunder puzzles, chess tactical trainer, centipawn loss analyzer, opening repertoire audit, ChessPulse"
+      content="chess analysis, chess.com analyzer, blunder recovery, chess puzzles, tactical heuristic engine, chess opening repertoire, chess rating tracker"
     />
+    <meta name="author" content="ChessPulse" />
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#059669" />
 
-    <!-- Multi-Format Light & Dark Mode Staunton King Favicons -->
-    <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" media="(prefers-color-scheme: light)" />
-    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-    <link rel="canonical" href="https://chesspulse.app/" />
-
-    <!-- Open Graph Social Sharing Cards -->
+    <!-- Open Graph / Facebook / Discord / LinkedIn -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ChessPulse" />
-    <meta property="og:title" content="ChessPulse — Stop Blundering. Train Your Own Mistakes." />
+    <meta property="og:title" content="ChessPulse — Tactical Chess Analysis &amp; Blunder Recovery" />
     <meta
       property="og:description"
-      content="Turn your real Chess.com blunders into custom Stockfish 16.1 tactical puzzles, move-by-move centipawn telemetry, and opening repertoire insights."
+      content="Stop blundering and train your own mistakes. Sync your Chess.com handle for instant tactical evaluations and personalized blunder recovery puzzles."
     />
-    <meta property="og:url" content="https://chesspulse.app/" />
     <meta property="og:image" content="/og-preview.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="ChessPulse interface showcasing 3D Staunton King branding and Stockfish 16.1 centipawn telemetry"
+      content="ChessPulse — Interactive Chessboard, Tactical Heuristic Evaluation Bar, and Rating Progression Analytics"
     />
 
-    <!-- Twitter / X Large Summary Card -->
+    <!-- Twitter / X Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ChessPulse — Stop Blundering. Train Your Own Mistakes." />
+    <meta name="twitter:title" content="ChessPulse — Tactical Chess Analysis &amp; Blunder Recovery" />
     <meta
       name="twitter:description"
-      content="Turn your real Chess.com blunders into custom Stockfish 16.1 tactical puzzles, move-by-move centipawn telemetry, and opening repertoire insights."
+      content="Analyze your Chess.com games with the ChessPulse Tactical Heuristic Engine and turn your own blunders into interactive training puzzles."
     />
     <meta name="twitter:image" content="/og-preview.svg" />
-    <meta
-      name="twitter:image:alt"
-      content="ChessPulse interface showcasing 3D Staunton King branding and Stockfish 16.1 centipawn telemetry"
-    />
 
-    <!-- Schema.org JSON-LD Structured Data -->
+    <!-- Custom Staunton King SVG Favicon & Apple Touch Icon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Schema.org Structured Data (JSON-LD) -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -60,24 +55,16 @@
         "name": "ChessPulse",
         "applicationCategory": "GameApplication",
         "operatingSystem": "Web",
-        "description": "Data-driven chess analysis and personalized tactical puzzle trainer built on Stockfish centipawn telemetry and public Chess.com game archives.",
+        "description": "Connect your Chess.com account to analyze recent matches, uncover tactical blunders with the ChessPulse Tactical Heuristic Engine, and solve personalized puzzles from your own games.",
         "offers": {
           "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "EUR",
-          "description": "Free Public Beta with instant Chess.com handle sync"
+          "price": "0.00",
+          "priceCurrency": "EUR"
         }
       }
     </script>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
   </head>
-  <body class="bg-[#FFFFFF] text-[#0F172A] antialiased selection:bg-[#DCFCE7] selection:text-[#065F46] min-h-screen">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -30,9 +30,9 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
   {
     number: 2,
     badge: '02',
-    title: 'Automated Engine Scan',
+    title: 'Automated Heuristic Scan',
     description:
-      'Stockfish 16.1 evaluates your moves in real time to flag critical centipawn swings, blunders, and missed wins.',
+      'The ChessPulse Tactical Heuristic Engine evaluates your moves in real time to flag critical evaluation swings, blunders, and missed wins.',
     pillLabel: 'Engine Audit',
     pillValue: '24... Qxf2?? → 25. Rxf2!',
     icon: <Cpu className="w-4 h-4 text-emerald-700" />,

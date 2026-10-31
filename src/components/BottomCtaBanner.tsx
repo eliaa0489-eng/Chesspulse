@@ -100,7 +100,7 @@ export function BottomCtaBanner({ onAnalyzeUsername }: BottomCtaBannerProps) {
             <span aria-hidden="true">·</span>
             <span>Zero Password Needed</span>
             <span aria-hidden="true">·</span>
-            <span>Live Stockfish 16.1 Calibration</span>
+            <span>Tactical Heuristic Calibration</span>
           </div>
         </div>
       </div>

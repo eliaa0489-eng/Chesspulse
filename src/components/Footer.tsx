@@ -291,7 +291,7 @@ export function Footer({
                   onClick={(e) => handleSectionLink(e, 'analyzer')}
                   className="hover:text-white transition-colors"
                 >
-                  Stockfish 16.1 Engine
+                  Tactical Heuristic Engine
                 </a>
               </li>
               <li>

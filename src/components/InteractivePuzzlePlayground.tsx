@@ -148,7 +148,7 @@ export function InteractivePuzzlePlayground({
             </h2>
             <p className="text-sm sm:text-base text-slate-600 font-normal">
               {activeMode === 'analyzer'
-                ? 'Live Stockfish centipawn evaluation annotations, custom tournament emerald & alabaster board styling, and real PGN move archives.'
+                ? 'ChessPulse Tactical Heuristic Engine centipawn annotations, custom tournament emerald & alabaster board styling, and real PGN move archives.'
                 : 'Puzzles generated strictly from real match mistakes. No two players receive the same generic puzzle bank.'}
             </p>
           </div>
