@@ -53,3 +53,6 @@ git clone [https://github.com/DeinBenutzername/chesspulse.git](https://github.co
 cd chesspulse
 npm install
 npm run dev
+## License
+
+ChessPulse is free software under the [GNU Affero General Public License v3.0 or later](LICENSE). You may use, study, change and share it. If you distribute a modified version or offer it as a network service, you must publish your source code under the same license.
