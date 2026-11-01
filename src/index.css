@@ -4,109 +4,296 @@
 @layer base {
   :root {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Clean Alabaster & Forest Green Palette */
+    --bg-primary: #F8FAF9;
+    --bg-surface: #FFFFFF;
+    --bg-muted: #F1F5F3;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --accent-emerald: #059669;
+    --accent-emerald-hover: #047857;
+    --border-subtle: #E2E8F0;
+  }
+
+  html.dark {
+    --bg-primary: #050505;
+    --bg-surface: #111111;
+    --bg-muted: #161616;
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --accent-emerald: #10b981;
+    --accent-emerald-hover: #059669;
+    --border-subtle: #222222;
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: var(--font-sans);
-    background-color: #FFFFFF;
-    color: #0F172A;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-sans);
-    letter-spacing: -0.025em;
-    text-wrap: balance;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Custom crisp card border and shadow */
+/* Custom utility classes for clean SaaS surfaces */
 .saas-card {
   background-color: #FFFFFF;
   border: 1px solid #E2E8F0;
-  border-radius: 20px;
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.saas-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.07), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
 }
 
 .saas-card-muted {
   background-color: #F8FAF9;
   border: 1px solid #E2E8F0;
-  border-radius: 20px;
+  border-radius: 1rem;
 }
 
-/* Subtly elevated preview shadow */
-.saas-preview-shadow {
-  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.07), 0 0 1px 1px rgba(15, 23, 42, 0.05);
-}
-
-/* Aceternity UI Technical Grid Pattern */
+/* Aceternity-inspired ultra-subtle structural dot/grid pattern */
 .aceternity-grid {
-  background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
-    linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
-  background-size: 4rem 4rem;
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 23, 42, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
 }
 
-/* Subtle mask for smooth grid fade-out */
-.grid-mask-radial {
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 60%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 60%, transparent 100%);
+.aceternity-dots {
+  background-image: radial-gradient(rgba(5, 150, 105, 0.14) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
-/* Warm Hero Glow (Shape.ai / Aceternity inspired) */
+/* Warm sunlight top-down glow */
 .hero-warm-glow {
-  background: radial-gradient(circle 500px at 50% 280px, rgba(254, 243, 199, 0.45), rgba(253, 230, 138, 0.15), transparent 70%);
+  background: radial-gradient(80% 50% at 50% 0%, rgba(16, 185, 129, 0.08) 0%, rgba(248, 250, 249, 0) 100%);
 }
 
-/* Sleek iPhone 16 Pro Titanium Frame Styling */
-.iphone-titanium-bezel {
-  background: linear-gradient(145deg, #3d3b38 0%, #1f1e1d 45%, #2a2927 100%);
-  box-shadow: 
-    0 50px 100px -20px rgba(15, 23, 42, 0.32),
-    0 25px 45px -15px rgba(5, 150, 105, 0.12),
-    0 0 0 1px rgba(255, 255, 255, 0.12),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+/* ==========================================================================
+   OBSIDIAN-BLACK & EMERALD DARK MODE PALETTE (100% IDENTICAL STRUCTURE)
+   Background: #050505 / #0a0a0a
+   Surface / Cards / Containers: #111111 to #161616
+   Borders: #222222 / rgba(255, 255, 255, 0.08)
+   Primary Accent: #10b981 (Hover: #059669, Highlight glow: rgba(16, 185, 129, 0.12))
+   Typography: Primary #f9fafb, Secondary #9ca3af
+   ========================================================================== */
+
+html.dark .saas-card {
+  background-color: #111111;
+  border-color: #222222;
+  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.65);
 }
 
-.iphone-inner-display {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.8), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+html.dark .saas-card:hover {
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.8);
 }
 
-/* Apple & Stripe Grade Luxurious Transitions */
-.ease-apple {
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+html.dark .saas-card-muted {
+  background-color: #161616;
+  border-color: #222222;
 }
 
-.duration-apple {
-  transition-duration: 500ms;
+html.dark .aceternity-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
 }
 
-.duration-apple-slow {
-  transition-duration: 700ms;
+html.dark .hero-warm-glow {
+  background: radial-gradient(80% 50% at 50% 0%, rgba(16, 185, 129, 0.12) 0%, rgba(5, 5, 5, 0) 100%);
 }
 
-/* Smooth micro-interactions */
-.apple-card-hover {
-  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 500ms cubic-bezier(0.16, 1, 0.3, 1), border-color 500ms cubic-bezier(0.16, 1, 0.3, 1);
+/* Main Page & Section Backgrounds -> #050505 / #0a0a0a */
+html.dark main,
+html.dark section,
+html.dark footer,
+html.dark .bg-\[\#F8FAF9\],
+html.dark .bg-\[\#F8FAFC\] {
+  background-color: #050505 !important;
 }
-.apple-card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 32px -10px rgba(15, 23, 42, 0.08);
+
+html.dark header {
+  background-color: rgba(5, 5, 5, 0.88) !important;
+  border-color: #222222 !important;
 }
 
+/* Surface Cards, Panels, Inputs & Modals -> #111111 to #161616 */
+html.dark .bg-white:not([style*="height"]),
+html.dark .bg-white\/95,
+html.dark .bg-white\/90,
+html.dark .bg-white\/80 {
+  background-color: #111111 !important;
+}
 
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/90,
+html.dark .bg-slate-50\/80,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-100,
+html.dark .bg-slate-100\/80 {
+  background-color: #161616 !important;
+}
 
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-200:hover {
+  background-color: #1c1c1c !important;
+}
+
+/* Emerald Highlight Glows -> rgba(16, 185, 129, 0.12) */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/95,
+html.dark .bg-emerald-50\/90,
+html.dark .bg-emerald-50\/80,
+html.dark .bg-emerald-50\/60,
+html.dark .bg-emerald-100,
+html.dark .bg-emerald-100\/80,
+html.dark .bg-\[\#ECFDF5\] {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}
+
+/* Primary Accent Emerald Buttons -> #10b981 & #059669 Hover */
+html.dark .bg-emerald-600,
+html.dark .bg-\[\#059669\] {
+  background-color: #10b981 !important;
+  color: #050505 !important;
+}
+
+html.dark .hover\:bg-emerald-700:hover,
+html.dark .hover\:bg-\[\#047857\]:hover {
+  background-color: #059669 !important;
+  color: #f9fafb !important;
+}
+
+/* Dark Slate CTA Buttons in Dark Mode -> Subtle Elevated Surface or Emerald */
+html.dark .bg-slate-900:not(.w-9),
+html.dark .bg-slate-950,
+html.dark .bg-\[\#0F172A\] {
+  background-color: #161616 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #f9fafb !important;
+}
+
+html.dark .hover\:bg-slate-800:hover {
+  background-color: #222222 !important;
+}
+
+/* Fine Subtle Borders -> #222222 / rgba(255, 255, 255, 0.08) */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-200\/90,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-200\/70,
+html.dark .border-slate-200\/60,
+html.dark .border-slate-300,
+html.dark .border-\[\#E2E8F0\] {
+  border-color: #222222 !important;
+}
+
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #222222 !important;
+}
+
+html.dark .border-emerald-100,
+html.dark .border-emerald-200,
+html.dark .border-emerald-200\/90,
+html.dark .border-emerald-200\/80,
+html.dark .border-emerald-200\/60,
+html.dark .border-emerald-300,
+html.dark .border-emerald-300\/80 {
+  border-color: rgba(16, 185, 129, 0.32) !important;
+}
+
+/* Typography & Contrast -> Primary #f9fafb, Secondary #9ca3af, Emerald #10b981 */
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-\[\#0F172A\] {
+  color: #f9fafb !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-slate-400,
+html.dark .text-\[\#475569\],
+html.dark .text-\[\#64748B\] {
+  color: #9ca3af !important;
+}
+
+html.dark .text-emerald-950,
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700,
+html.dark .text-emerald-600,
+html.dark .text-\[\#059669\],
+html.dark .text-\[\#047857\] {
+  color: #10b981 !important;
+}
+
+/* Status Badges in Dark Mode */
+html.dark .bg-amber-50,
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700 {
+  color: #fbbf24 !important;
+}
+
+html.dark .bg-rose-50,
+html.dark .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+html.dark .text-rose-900,
+html.dark .text-rose-800,
+html.dark .text-rose-700 {
+  color: #fb7185 !important;
+}
+
+/* Custom slim scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #262626;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

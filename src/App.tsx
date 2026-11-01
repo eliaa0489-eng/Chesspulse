@@ -10,12 +10,7 @@ import { PricingSection } from './components/PricingSection';
 import { FaqSection } from './components/FaqSection';
 import { BottomCtaBanner } from './components/BottomCtaBanner';
 import { Footer } from './components/Footer';
-import { AnalysisModal } from './components/AnalysisModal';
-import { PlanModal } from './components/PlanModal';
-import { AuthModal } from './components/AuthModal';
-import { PolicyModal } from './components/PolicyModal';
-import { UserProfileStatsModal } from './components/UserProfileStatsModal';
-import { ShareModal, ShareData } from './components/ShareModal';
+import type { ShareData } from './components/ShareModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { sanitizeChessHandle } from './services/chessComApi';
 import {
@@ -24,7 +19,7 @@ import {
   initPerformanceTelemetry,
 } from './services/analytics';
 
-// Code-split secondary routes for fast First Contentful Paint (FCP)
+// Code-split secondary routes and modals for fast First Contentful Paint (FCP)
 const PersonalPuzzlesPage = lazy(() =>
   import('./pages/PersonalPuzzlesPage').then((m) => ({ default: m.PersonalPuzzlesPage }))
 );
@@ -33,6 +28,24 @@ const LegalPages = lazy(() =>
 );
 const NotFoundPage = lazy(() =>
   import('./components/NotFoundPage').then((m) => ({ default: m.NotFoundPage }))
+);
+const AnalysisModal = lazy(() =>
+  import('./components/AnalysisModal').then((m) => ({ default: m.AnalysisModal }))
+);
+const PlanModal = lazy(() =>
+  import('./components/PlanModal').then((m) => ({ default: m.PlanModal }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
+const PolicyModal = lazy(() =>
+  import('./components/PolicyModal').then((m) => ({ default: m.PolicyModal }))
+);
+const UserProfileStatsModal = lazy(() =>
+  import('./components/UserProfileStatsModal').then((m) => ({ default: m.UserProfileStatsModal }))
+);
+const ShareModal = lazy(() =>
+  import('./components/ShareModal').then((m) => ({ default: m.ShareModal }))
 );
 
 export type AppRoute = 'home' | 'puzzles' | 'impressum' | 'datenschutz' | 'notfound';
@@ -55,10 +68,39 @@ function resolveInitialRoute(): AppRoute {
 export default function App() {
   const [currentPage, setCurrentPage] = useState<AppRoute>(resolveInitialRoute);
 
-  // User authentication state (saved in localStorage)
+  // Theme state (persisted in localStorage under 'chesspulse-theme', defaults to 'light')
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      return localStorage.getItem('chesspulse-theme') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('chesspulse-theme', theme);
+    } catch {
+      // safe fallback
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  // User authentication state (saved in localStorage, strictly sanitized)
   const [loggedInUser, setLoggedInUser] = useState<string | null>(() => {
     try {
-      return localStorage.getItem('chesspulse_user');
+      const saved = localStorage.getItem('chesspulse_user');
+      if (!saved) return null;
+      return sanitizeChessHandle(saved) || null;
     } catch {
       return null;
     }
@@ -267,7 +309,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-[#0F172A] font-sans antialiased selection:bg-[#DCFCE7] selection:text-[#065F46]">
+    <div className="min-h-screen bg-white dark:bg-[#050505] text-[#0F172A] dark:text-[#f9fafb] font-sans antialiased selection:bg-[#DCFCE7] selection:text-[#065F46] transition-colors duration-200">
       {/* Sticky Top Header */}
       <Navbar
         currentPage={currentPage}
@@ -386,61 +428,75 @@ export default function App() {
         onOpenTerms={() => setPolicyType('terms')}
         onNavigateLegal={(legalPage) => navigateTo(legalPage)}
         onNavigatePage={(page, sectionId) => navigateTo(page, sectionId)}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Non-Intrusive Apple/Stripe Cookie Consent Banner */}
       <CookieConsentBanner onNavigateLegal={(legalPage) => navigateTo(legalPage)} />
 
-      {/* Interactive Modals */}
-      <AnalysisModal
-        username={analyzedUser || loggedInUser || 'Hikaru'}
-        isOpen={isAnalysisModalOpen}
-        onClose={() => setIsAnalysisModalOpen(false)}
-        onSelectPuzzle={() => {
-          handleLogin(analyzedUser || 'Hikaru');
-        }}
-      />
+      {/* Interactive Modals (Lazy-Loaded on Demand) */}
+      <Suspense fallback={null}>
+        {isAnalysisModalOpen && (
+          <AnalysisModal
+            username={analyzedUser || loggedInUser || 'Hikaru'}
+            isOpen={isAnalysisModalOpen}
+            onClose={() => setIsAnalysisModalOpen(false)}
+            onSelectPuzzle={() => {
+              handleLogin(analyzedUser || 'Hikaru');
+            }}
+          />
+        )}
 
-      {selectedPlan && (
-        <PlanModal
-          planName={selectedPlan.name}
-          price={selectedPlan.price}
-          isOpen={isPlanModalOpen}
-          onClose={() => setIsPlanModalOpen(false)}
-          onPlanActivated={() => {
-            setIsPayingUser(true);
-          }}
-        />
-      )}
+        {selectedPlan && isPlanModalOpen && (
+          <PlanModal
+            planName={selectedPlan.name}
+            price={selectedPlan.price}
+            isOpen={isPlanModalOpen}
+            onClose={() => setIsPlanModalOpen(false)}
+            onPlanActivated={() => {
+              setIsPayingUser(true);
+            }}
+          />
+        )}
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={(user) => {
-          handleLogin(user);
-        }}
-      />
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+            onSuccess={(user) => {
+              handleLogin(user);
+            }}
+          />
+        )}
 
-      <PolicyModal
-        type={policyType}
-        onClose={() => setPolicyType(null)}
-      />
+        {policyType && (
+          <PolicyModal
+            type={policyType}
+            onClose={() => setPolicyType(null)}
+          />
+        )}
 
-      {/* Community Share Modal */}
-      <ShareModal
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        data={shareData}
-      />
+        {/* Community Share Modal */}
+        {isShareModalOpen && (
+          <ShareModal
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            data={shareData}
+          />
+        )}
 
-      {/* Live Chess.com User Profile Statistics Modal */}
-      <UserProfileStatsModal
-        username={analyzedUser || loggedInUser || 'Hikaru'}
-        isOpen={isProfileStatsModalOpen}
-        onClose={() => setIsProfileStatsModalOpen(false)}
-        onChangeUsername={(newUser) => setAnalyzedUser(newUser)}
-        onNavigateToPuzzles={() => navigateTo('puzzles')}
-      />
+        {/* Live Chess.com User Profile Statistics Modal */}
+        {isProfileStatsModalOpen && (
+          <UserProfileStatsModal
+            username={analyzedUser || loggedInUser || 'Hikaru'}
+            isOpen={isProfileStatsModalOpen}
+            onClose={() => setIsProfileStatsModalOpen(false)}
+            onChangeUsername={(newUser) => setAnalyzedUser(newUser)}
+            onNavigateToPuzzles={() => navigateTo('puzzles')}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

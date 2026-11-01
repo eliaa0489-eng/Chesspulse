@@ -35,7 +35,11 @@ import { AccuracyRing } from './AccuracyRing';
 import { PaywallModal } from './PaywallModal';
 import { chessAudio } from '../services/chessSound';
 import { fetchRealPlayerMatchesWithStatus, ApiErrorCode } from '../services/chessComApi';
-import { parseAndAnalyzePgn } from '../services/pgnAnalyzer';
+import {
+  parseAndAnalyzePgn,
+  evaluatePositionMultiPly,
+  enrichAnalysisWithCloudEval,
+} from '../services/pgnAnalyzer';
 import { ShareData } from './ShareModal';
 
 interface SandboxState {
@@ -50,35 +54,9 @@ interface SandboxState {
   explanation: string;
 }
 
-function evaluateSandboxFen(chess: Chess): number {
-  if (chess.isCheckmate()) {
-    return chess.turn() === 'w' ? -9.9 : 9.9;
-  }
-  if (chess.isDraw() || chess.isStalemate() || chess.isThreefoldRepetition()) {
-    return 0.0;
-  }
-  const values: Record<string, number> = { p: 1, n: 3.05, b: 3.25, r: 5, q: 9, k: 0 };
-  const board = chess.board();
-  let score = 0;
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const cell = board[r][c];
-      if (!cell) continue;
-      const base = values[cell.type] || 0;
-      const centerBonus =
-        (r === 3 || r === 4) && (c === 3 || c === 4)
-          ? 0.22
-          : r >= 2 && r <= 5 && c >= 2 && c <= 5
-          ? 0.1
-          : 0;
-      if (cell.color === 'w') score += base + centerBonus;
-      else score -= base + centerBonus;
-    }
-  }
-  if (chess.inCheck()) {
-    score += chess.turn() === 'w' ? -0.35 : 0.35;
-  }
-  return Math.round(score * 10) / 10;
+function evaluateSandboxFen(chess: Chess): { pawns: number; pvLine: string } {
+  const res = evaluatePositionMultiPly(chess.fen(), 2);
+  return { pawns: res.pawns, pvLine: res.pvLine };
 }
 
 interface MoveByMoveAnalyzerProps {
@@ -185,6 +163,13 @@ export function MoveByMoveAnalyzer({
     setMatchAnalysis(analyzed);
     setActivePlyIndex(analyzed.plies.length - 1);
 
+    // Enrich opening & critical positions asynchronously with Lichess Cloud Evaluation
+    enrichAnalysisWithCloudEval(analyzed).then((enriched) => {
+      if (enriched) {
+        setMatchAnalysis((current) => (current.id === analyzed.id ? enriched : current));
+      }
+    });
+
     if (match.userColor === 'black') {
       setIsFlipped(true);
     } else {
@@ -267,7 +252,8 @@ export function MoveByMoveAnalyzer({
 
       if (!moveObj) return;
 
-      const newEvalNum = evaluateSandboxFen(chess);
+      const sandboxEval = evaluateSandboxFen(chess);
+      const newEvalNum = sandboxEval.pawns;
       const formattedEval =
         newEvalNum > 0 ? `+${newEvalNum.toFixed(1)}` : newEvalNum.toFixed(1);
 
@@ -291,7 +277,9 @@ export function MoveByMoveAnalyzer({
         classification: 'best',
         moveCount: nextHistory.length,
         history: nextHistory,
-        explanation: `What-If Sandbox continuation (${nextHistory.join(' → ')}). Live evaluation: ${formattedEval} pawns. Click "Reset to Match Line" to return to the recorded game.`,
+        explanation: `What-If Sandbox continuation (${nextHistory.join(' → ')}). Live evaluation: ${formattedEval} pawns.${
+          sandboxEval.pvLine ? ` Best reply line: ${sandboxEval.pvLine}.` : ''
+        } Click "Reset to Match Line" to return to the recorded game.`,
       });
     } catch {
       // Ignore illegal moves
@@ -792,36 +780,53 @@ export function MoveByMoveAnalyzer({
                 {sandboxState ? sandboxState.explanation : currentPly?.explanation}
               </p>
 
-              {/* Tactical Delta Details & Best Alternative */}
-              {!sandboxState && currentPly?.evalDelta && (
-                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500 font-medium">Evaluation Swing:</span>
-                    <span
-                      className={`font-mono font-bold tabular-nums ${
-                        currentPly.evalDelta.startsWith('+') ? 'text-emerald-700' : 'text-rose-600'
-                      }`}
-                    >
-                      {currentPly.evalDelta} Swing
-                    </span>
+              {/* Tactical Delta Details, Best Alternative & Principal Variation */}
+              {!sandboxState &&
+                (currentPly?.evalDelta ||
+                  currentPly?.bestAlternative ||
+                  currentPly?.pvLine ||
+                  currentPly?.tacticalThreat) && (
+                  <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs">
+                    {currentPly.evalDelta && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-medium">Evaluation Swing:</span>
+                        <span
+                          className={`font-mono font-bold tabular-nums ${
+                            currentPly.evalDelta.startsWith('+') ? 'text-emerald-700' : 'text-rose-600'
+                          }`}
+                        >
+                          {currentPly.evalDelta} Swing
+                        </span>
+                      </div>
+                    )}
+
+                    {currentPly.bestAlternative && (
+                      <div className="text-slate-800 flex items-center justify-between gap-2 pt-0.5">
+                        <span className="font-semibold text-slate-700">Best Engine Move:</span>
+                        <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                          {currentPly.bestAlternative}
+                        </span>
+                      </div>
+                    )}
+
+                    {currentPly.pvLine && (
+                      <div className="text-slate-800 flex flex-col gap-1 pt-0.5">
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          Principal Variation (PV):
+                        </span>
+                        <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90">
+                          {currentPly.pvLine}
+                        </span>
+                      </div>
+                    )}
+
+                    {currentPly.tacticalThreat && (
+                      <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight">
+                        • {currentPly.tacticalThreat}
+                      </div>
+                    )}
                   </div>
-
-                  {currentPly.bestAlternative && (
-                    <div className="text-slate-800 flex items-center justify-between gap-2 pt-0.5">
-                      <span className="font-semibold text-slate-700">Heuristic Recommendation:</span>
-                      <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                        {currentPly.bestAlternative}
-                      </span>
-                    </div>
-                  )}
-
-                  {currentPly.tacticalThreat && (
-                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight">
-                      • {currentPly.tacticalThreat}
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
             </motion.div>
           </AnimatePresence>
 
@@ -868,10 +873,14 @@ export function MoveByMoveAnalyzer({
                             : ply.classification === 'brilliant'
                             ? 'Brilliant sacrifice'
                             : ply.classification === 'mistake'
-                            ? 'Tactical slip'
+                            ? 'Tactical mistake'
                             : ply.classification === 'inaccuracy'
                             ? 'Inaccuracy'
-                            : 'Optimal line'}
+                            : ply.classification === 'book'
+                            ? 'Opening book'
+                            : ply.classification === 'good'
+                            ? 'Solid practical move'
+                            : 'Top engine move'}
                         </span>
                       </div>
                     </div>
@@ -1103,7 +1112,7 @@ export function MoveByMoveAnalyzer({
                 Accuracy Metrics
               </span>
               <span className="text-[11px] font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-slate-200">
-                Stockfish 16.1
+                Hybrid Cloud + Alpha-Beta
               </span>
             </div>
 

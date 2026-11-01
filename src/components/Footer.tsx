@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, ShieldCheck, CheckCircle2, ArrowRight, Mail, Sparkles, AlertCircle } from 'lucide-react';
+import { Lock, ShieldCheck, CheckCircle2, ArrowRight, Mail, Sparkles, AlertCircle, Moon, Sun } from 'lucide-react';
 
 interface FooterProps {
   onOpenCompliance: () => void;
@@ -7,6 +7,8 @@ interface FooterProps {
   onOpenTerms: () => void;
   onNavigateLegal?: (page: 'impressum' | 'datenschutz') => void;
   onNavigatePage?: (page: 'home' | 'puzzles' | 'impressum' | 'datenschutz', sectionId?: string) => void;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
 export function Footer({
@@ -15,6 +17,8 @@ export function Footer({
   onOpenTerms,
   onNavigateLegal,
   onNavigatePage,
+  theme = 'light',
+  onToggleTheme,
 }: FooterProps) {
   const currentYear = new Date().getFullYear();
   const [emailInput, setEmailInput] = useState('');
@@ -401,6 +405,30 @@ export function Footer({
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-300">
+            {/* Minimalist Theme Switcher (Moon/Sun Icon + Label) */}
+            {onToggleTheme && (
+              <>
+                <button
+                  type="button"
+                  onClick={onToggleTheme}
+                  aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#153123] hover:bg-[#1C3D2C] dark:bg-[#111111] dark:hover:bg-[#161616] border border-[#234B37] dark:border-[#222222] text-slate-200 hover:text-white transition-all cursor-pointer font-medium"
+                >
+                  {theme === 'dark' ? (
+                    <>
+                      <Sun className="w-3.5 h-3.5 text-[#10b981]" />
+                      <span>Light Mode</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Dark Mode</span>
+                    </>
+                  )}
+                </button>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
             <a
               href="/impressum"
               onClick={(e) => {

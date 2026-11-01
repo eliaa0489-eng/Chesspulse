@@ -174,13 +174,74 @@ function parseRawGamesToRecentSummaries(rawGames: unknown[], cleanHandle: string
   });
 }
 
+// --- Client-Side In-Memory TTL Cache & In-Flight Request Deduplication ---
+const CLIENT_CACHE_TTL_MS = 60_000; // 60 seconds
+const MAX_CLIENT_CACHE_ENTRIES = 60;
+
+interface ClientCacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+const liveStatsCache = new Map<
+  string,
+  ClientCacheEntry<{ code: ApiErrorCode; data: LivePlayerStats | null; errorMessage?: string }>
+>();
+const inFlightStatsPromises = new Map<
+  string,
+  Promise<{ code: ApiErrorCode; data: LivePlayerStats | null; errorMessage?: string }>
+>();
+
+const matchesCache = new Map<
+  string,
+  ClientCacheEntry<{ code: ApiErrorCode; matches: ChessComMatch[]; errorMessage?: string }>
+>();
+const inFlightMatchesPromises = new Map<
+  string,
+  Promise<{ code: ApiErrorCode; matches: ChessComMatch[]; errorMessage?: string }>
+>();
+
+function getFromClientCache<T>(map: Map<string, ClientCacheEntry<T>>, key: string): T | null {
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    map.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setInClientCache<T>(map: Map<string, ClientCacheEntry<T>>, key: string, value: T): void {
+  if (map.size >= MAX_CLIENT_CACHE_ENTRIES) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey !== undefined) {
+      map.delete(oldestKey);
+    }
+  }
+  map.set(key, { value, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchDirectPublicChessComOverview(
   cleanHandle: string
 ): Promise<{ profile: Record<string, unknown>; stats: Record<string, unknown> } | 'NOT_FOUND' | null> {
   try {
     const [profileRes, statsRes] = await Promise.all([
-      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}`),
-      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/stats`),
+      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}`, 10000),
+      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/stats`, 10000),
     ]);
     if (profileRes.status === 404) return 'NOT_FOUND';
     if (!profileRes.ok) return null;
@@ -197,8 +258,9 @@ async function fetchDirectPublicChessComGames(
   limit: number
 ): Promise<Record<string, unknown>[] | 'NOT_FOUND' | null> {
   try {
-    const archivesRes = await fetch(
-      `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/archives`
+    const archivesRes = await fetchWithTimeout(
+      `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/archives`,
+      10000
     );
     if (archivesRes.status === 404) return 'NOT_FOUND';
     if (!archivesRes.ok) return null;
@@ -210,7 +272,7 @@ async function fetchDirectPublicChessComGames(
     if (typeof latestUrl !== 'string' || !latestUrl.startsWith('https://api.chess.com/')) {
       return [];
     }
-    const gamesRes = await fetch(latestUrl);
+    const gamesRes = await fetchWithTimeout(latestUrl, 12000);
     if (!gamesRes.ok) return null;
     const gamesData = (await gamesRes.json()) as { games?: Record<string, unknown>[] };
     const rawGames = Array.isArray(gamesData?.games) ? gamesData.games : [];
@@ -226,6 +288,7 @@ async function fetchDirectPublicChessComGames(
 /**
  * Fetches live player statistics and recent match summaries from our secure backend proxy,
  * with automatic fallback to the public Chess.com API if the serverless route is cold or unavailable.
+ * Uses in-memory TTL caching and in-flight request deduplication for instant performance.
  */
 export async function fetchLivePlayerStats(
   username: string
@@ -239,135 +302,161 @@ export async function fetchLivePlayerStats(
     };
   }
 
-  let profileObj: Record<string, unknown> | null = null;
-  let statsObj: Record<string, unknown> | null = null;
-  let rawRecentGames: unknown[] = [];
+  const cached = getFromClientCache(liveStatsCache, cleanHandle);
+  if (cached) {
+    return cached;
+  }
 
-  try {
-    const [overviewRes, matchesRes] = await Promise.all([
-      fetch(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/overview`),
-      fetch(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=12`),
-    ]);
+  const existingPromise = inFlightStatsPromises.get(cleanHandle);
+  if (existingPromise) {
+    return existingPromise;
+  }
 
-    const contentType = overviewRes.headers.get('content-type') || '';
-    const isJson = contentType.includes('application/json');
+  const requestPromise = (async (): Promise<{
+    code: ApiErrorCode;
+    data: LivePlayerStats | null;
+    errorMessage?: string;
+  }> => {
+    let profileObj: Record<string, unknown> | null = null;
+    let statsObj: Record<string, unknown> | null = null;
+    let rawRecentGames: unknown[] = [];
 
-    if (overviewRes.status === 404 && isJson) {
-      const errBody = await overviewRes.json().catch(() => ({}));
-      if (errBody?.code === 'USER_NOT_FOUND') {
+    try {
+      const [overviewRes, matchesRes] = await Promise.all([
+        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/overview`, 10000),
+        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=12`, 12000),
+      ]);
+
+      const contentType = overviewRes.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+
+      if (overviewRes.status === 404 && isJson) {
+        const errBody = await overviewRes.json().catch(() => ({}));
+        if (errBody?.code === 'USER_NOT_FOUND') {
+          return {
+            code: 'USER_NOT_FOUND',
+            data: null,
+            errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+          };
+        }
+      }
+
+      if (overviewRes.status === 429) {
+        return {
+          code: 'RATE_LIMITED',
+          data: null,
+          errorMessage: 'Rate limit reached. Please wait a moment and try again.',
+        };
+      }
+
+      if (overviewRes.ok && isJson) {
+        const overviewPayload = await overviewRes.json();
+        profileObj = (overviewPayload?.profile as Record<string, unknown>) || overviewPayload;
+        statsObj = (overviewPayload?.stats as Record<string, unknown>) || overviewPayload;
+      }
+
+      if (matchesRes.ok && (matchesRes.headers.get('content-type') || '').includes('application/json')) {
+        const matchesPayload = await matchesRes.json();
+        if (Array.isArray(matchesPayload?.games)) {
+          rawRecentGames = matchesPayload.games;
+        }
+      }
+    } catch {
+      // Will try direct public API fallback below
+    }
+
+    // Fallback to direct public Chess.com API if proxy route returned HTML/404/502 on serverless host
+    if (!profileObj || !statsObj) {
+      const directOverview = await fetchDirectPublicChessComOverview(cleanHandle);
+      if (directOverview === 'NOT_FOUND') {
         return {
           code: 'USER_NOT_FOUND',
           data: null,
           errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
         };
       }
+      if (!directOverview) {
+        return {
+          code: 'NETWORK_ERROR',
+          data: null,
+          errorMessage: `Unable to load statistics for "@${cleanHandle}".`,
+        };
+      }
+      profileObj = directOverview.profile;
+      statsObj = directOverview.stats;
     }
 
-    if (overviewRes.status === 429) {
-      return {
-        code: 'RATE_LIMITED',
-        data: null,
-        errorMessage: 'Rate limit reached. Please wait a moment and try again.',
-      };
-    }
-
-    if (overviewRes.ok && isJson) {
-      const overviewPayload = await overviewRes.json();
-      profileObj = (overviewPayload?.profile as Record<string, unknown>) || overviewPayload;
-      statsObj = (overviewPayload?.stats as Record<string, unknown>) || overviewPayload;
-    }
-
-    if (matchesRes.ok && (matchesRes.headers.get('content-type') || '').includes('application/json')) {
-      const matchesPayload = await matchesRes.json();
-      if (Array.isArray(matchesPayload?.games)) {
-        rawRecentGames = matchesPayload.games;
+    if (rawRecentGames.length === 0) {
+      const directGames = await fetchDirectPublicChessComGames(cleanHandle, 12);
+      if (Array.isArray(directGames)) {
+        rawRecentGames = directGames;
       }
     }
-  } catch {
-    // Will try direct public API fallback below
+
+    const rapid = parseCategoryStats(statsObj.chess_rapid);
+    const blitz = parseCategoryStats(statsObj.chess_blitz);
+    const bullet = parseCategoryStats(statsObj.chess_bullet);
+
+    const totalWins = rapid.wins + blitz.wins + bullet.wins;
+    const totalDraws = rapid.draws + blitz.draws + bullet.draws;
+    const totalLosses = rapid.losses + blitz.losses + bullet.losses;
+    const totalGames = totalWins + totalDraws + totalLosses;
+
+    const overallWinRatePct =
+      totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
+    const overallDrawRatePct =
+      totalGames > 0 ? Math.round((totalDraws / totalGames) * 1000) / 10 : 0;
+    const overallLossRatePct =
+      totalGames > 0
+        ? Math.max(0, Math.round((100 - overallWinRatePct - overallDrawRatePct) * 10) / 10)
+        : 0;
+
+    const recentGames = parseRawGamesToRecentSummaries(rawRecentGames, cleanHandle);
+
+    const resolvedUsername =
+      typeof profileObj.username === 'string' && profileObj.username.trim()
+        ? profileObj.username.trim()
+        : cleanHandle;
+
+    const tacticsObj = (statsObj.tactics as Record<string, unknown>) || {};
+    const highestObj = (tacticsObj.highest as Record<string, unknown>) || {};
+
+    const result = {
+      code: 'OK' as const,
+      data: {
+        username: resolvedUsername,
+        title: typeof profileObj.title === 'string' ? profileObj.title : undefined,
+        avatar: getLocalAvatarPath(resolvedUsername),
+        joinedTimestamp: typeof profileObj.joined === 'number' ? profileObj.joined : undefined,
+        followers: typeof profileObj.followers === 'number' ? profileObj.followers : undefined,
+        profileUrl:
+          validateChessComUrl(profileObj.url) ||
+          `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`,
+        rapid,
+        blitz,
+        bullet,
+        tacticsPeak: typeof highestObj.rating === 'number' ? Math.round(highestObj.rating) : null,
+        totalGames,
+        totalWins,
+        totalDraws,
+        totalLosses,
+        overallWinRatePct,
+        overallDrawRatePct,
+        overallLossRatePct,
+        recentGames,
+      },
+    };
+
+    setInClientCache(liveStatsCache, cleanHandle, result);
+    return result;
+  })();
+
+  inFlightStatsPromises.set(cleanHandle, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    inFlightStatsPromises.delete(cleanHandle);
   }
-
-  // Fallback to direct public Chess.com API if proxy route returned HTML/404/502 on serverless host
-  if (!profileObj || !statsObj) {
-    const directOverview = await fetchDirectPublicChessComOverview(cleanHandle);
-    if (directOverview === 'NOT_FOUND') {
-      return {
-        code: 'USER_NOT_FOUND',
-        data: null,
-        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
-      };
-    }
-    if (!directOverview) {
-      return {
-        code: 'NETWORK_ERROR',
-        data: null,
-        errorMessage: `Unable to load statistics for "@${cleanHandle}".`,
-      };
-    }
-    profileObj = directOverview.profile;
-    statsObj = directOverview.stats;
-  }
-
-  if (rawRecentGames.length === 0) {
-    const directGames = await fetchDirectPublicChessComGames(cleanHandle, 12);
-    if (Array.isArray(directGames)) {
-      rawRecentGames = directGames;
-    }
-  }
-
-  const rapid = parseCategoryStats(statsObj.chess_rapid);
-  const blitz = parseCategoryStats(statsObj.chess_blitz);
-  const bullet = parseCategoryStats(statsObj.chess_bullet);
-
-  const totalWins = rapid.wins + blitz.wins + bullet.wins;
-  const totalDraws = rapid.draws + blitz.draws + bullet.draws;
-  const totalLosses = rapid.losses + blitz.losses + bullet.losses;
-  const totalGames = totalWins + totalDraws + totalLosses;
-
-  const overallWinRatePct =
-    totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
-  const overallDrawRatePct =
-    totalGames > 0 ? Math.round((totalDraws / totalGames) * 1000) / 10 : 0;
-  const overallLossRatePct =
-    totalGames > 0
-      ? Math.max(0, Math.round((100 - overallWinRatePct - overallDrawRatePct) * 10) / 10)
-      : 0;
-
-  const recentGames = parseRawGamesToRecentSummaries(rawRecentGames, cleanHandle);
-
-  const resolvedUsername =
-    typeof profileObj.username === 'string' && profileObj.username.trim()
-      ? profileObj.username.trim()
-      : cleanHandle;
-
-  const tacticsObj = (statsObj.tactics as Record<string, unknown>) || {};
-  const highestObj = (tacticsObj.highest as Record<string, unknown>) || {};
-
-  return {
-    code: 'OK',
-    data: {
-      username: resolvedUsername,
-      title: typeof profileObj.title === 'string' ? profileObj.title : undefined,
-      avatar: getLocalAvatarPath(resolvedUsername),
-      joinedTimestamp: typeof profileObj.joined === 'number' ? profileObj.joined : undefined,
-      followers: typeof profileObj.followers === 'number' ? profileObj.followers : undefined,
-      profileUrl:
-        validateChessComUrl(profileObj.url) ||
-        `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`,
-      rapid,
-      blitz,
-      bullet,
-      tacticsPeak: typeof highestObj.rating === 'number' ? Math.round(highestObj.rating) : null,
-      totalGames,
-      totalWins,
-      totalDraws,
-      totalLosses,
-      overallWinRatePct,
-      overallDrawRatePct,
-      overallLossRatePct,
-      recentGames,
-    },
-  };
 }
 
 function extractPgnHeader(pgn: string, headerName: string): string | undefined {
@@ -379,6 +468,7 @@ function extractPgnHeader(pgn: string, headerName: string): string | undefined {
 
 /**
  * Fetches real recent Chess.com matches for a player with explicit status codes.
+ * Uses in-memory TTL caching and in-flight request deduplication.
  */
 export async function fetchRealPlayerMatchesWithStatus(
   username: string,
@@ -393,61 +483,80 @@ export async function fetchRealPlayerMatchesWithStatus(
     };
   }
 
-  let rawGames: unknown[] | null = null;
+  const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 25);
+  const cacheKey = `${cleanHandle}:${safeLimit}`;
 
-  try {
-    const response = await fetch(
-      `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=${limit}`
-    );
-    const isJson = (response.headers.get('content-type') || '').includes('application/json');
+  const cached = getFromClientCache(matchesCache, cacheKey);
+  if (cached) {
+    return cached;
+  }
 
-    if (response.status === 404 && isJson) {
-      const errBody = await response.json().catch(() => ({}));
-      if (errBody?.code === 'USER_NOT_FOUND') {
+  const existingPromise = inFlightMatchesPromises.get(cacheKey);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const requestPromise = (async (): Promise<{
+    code: ApiErrorCode;
+    matches: ChessComMatch[];
+    errorMessage?: string;
+  }> => {
+    let rawGames: unknown[] | null = null;
+
+    try {
+      const response = await fetchWithTimeout(
+        `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=${safeLimit}`,
+        12000
+      );
+      const isJson = (response.headers.get('content-type') || '').includes('application/json');
+
+      if (response.status === 404 && isJson) {
+        const errBody = await response.json().catch(() => ({}));
+        if (errBody?.code === 'USER_NOT_FOUND') {
+          return {
+            code: 'USER_NOT_FOUND',
+            matches: [],
+            errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
+          };
+        }
+      }
+
+      if (response.status === 429) {
+        return {
+          code: 'RATE_LIMITED',
+          matches: [],
+          errorMessage: 'Chess.com API rate limit reached. Please wait a moment and retry.',
+        };
+      }
+
+      if (response.ok && isJson) {
+        const payload = await response.json();
+        if (Array.isArray(payload?.games)) {
+          rawGames = payload.games;
+        }
+      }
+    } catch {
+      // Fallback to direct public API below
+    }
+
+    if (rawGames === null) {
+      const directGames = await fetchDirectPublicChessComGames(cleanHandle, safeLimit);
+      if (directGames === 'NOT_FOUND') {
         return {
           code: 'USER_NOT_FOUND',
           matches: [],
           errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
         };
       }
-    }
-
-    if (response.status === 429) {
-      return {
-        code: 'RATE_LIMITED',
-        matches: [],
-        errorMessage: 'Chess.com API rate limit reached. Please wait a moment and retry.',
-      };
-    }
-
-    if (response.ok && isJson) {
-      const payload = await response.json();
-      if (Array.isArray(payload?.games)) {
-        rawGames = payload.games;
+      if (directGames === null) {
+        return {
+          code: 'NETWORK_ERROR',
+          matches: [],
+          errorMessage: 'Could not retrieve recent matches from Chess.com.',
+        };
       }
+      rawGames = directGames;
     }
-  } catch {
-    // Fallback to direct public API below
-  }
-
-  if (rawGames === null) {
-    const directGames = await fetchDirectPublicChessComGames(cleanHandle, limit);
-    if (directGames === 'NOT_FOUND') {
-      return {
-        code: 'USER_NOT_FOUND',
-        matches: [],
-        errorMessage: `Player "@${cleanHandle}" was not found on Chess.com.`,
-      };
-    }
-    if (directGames === null) {
-      return {
-        code: 'NETWORK_ERROR',
-        matches: [],
-        errorMessage: 'Could not retrieve recent matches from Chess.com.',
-      };
-    }
-    rawGames = directGames;
-  }
 
   const matches: ChessComMatch[] = [];
   for (let i = 0; i < rawGames.length; i++) {
@@ -533,10 +642,21 @@ export async function fetchRealPlayerMatchesWithStatus(
     });
   }
 
-  return {
-    code: 'OK',
-    matches,
-  };
+    const result = {
+      code: 'OK' as const,
+      matches,
+    };
+
+    setInClientCache(matchesCache, cacheKey, result);
+    return result;
+  })();
+
+  inFlightMatchesPromises.set(cacheKey, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    inFlightMatchesPromises.delete(cacheKey);
+  }
 }
 
 /**

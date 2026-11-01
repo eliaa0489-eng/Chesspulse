@@ -1,126 +1,108 @@
-# ChessPulse — Architectural & Visual Overhaul Plan
+# ChessPulse — Precision Engine Evaluation & Obsidian-Emerald Dark Mode Upgrade
 
-## User Review & Critical Decisions
+This upgrade replaces single-ply heuristic estimation with a **Hybrid Lichess Cloud Evaluation + Multi-Ply Alpha-Beta Search Engine** that computes true centipawn deltas, principal variation (PV) continuation lines, and board-fact-grounded tactical explanations without spamming "Best Move". Simultaneously, it introduces a **seamless Light / Dark Mode switch in the Footer**, transforming the interface into a deep obsidian-black (`#050505` / `#111111`) and emerald-green (`#10b981`) aesthetic while preserving 100% of the existing layout, spacing, and component structure.
 
-- **Hero 3D Centerpiece Replacement (Strict Rule)**:
-  - **Complete Removal of Habit-Tracker Artifacts**: Strip out all lingering template artifacts inside the iPhone 16 Pro showcase—including the cartoon pear/sprout mascot, any hardcoded personal names (such as `"Elia"` or `"Sam"`), generic mood buttons (`"How are you feeling today?"`), and unrelated `"Food"` or `"Activity"` dashboard cards.
-  - **Nameless Sculptural 3D Matte-Black King Centerpiece**: Replace the removed graphic with a sleek, minimalist **3D matte-black King chess piece** rendered with high-end studio rim lighting and soft contact shadows. The centerpiece has **no name or persona label**—it exists purely for visual presence, sculptural character, and brand aesthetics.
-  - **Grandmaster-Grade Engine Telemetry**: Surround the 3D matte-black King centerpiece inside the mobile UI with live, grandmaster-grade engine telemetry—specifically **real-time centipawn evaluation (`+1.45 cp`)**, **engine search depth indicators (`Depth 32/40 • NNUE`)**, and **precise win-rate percentages (`Win 68.4% • Draw 24.1% • Loss 7.5%`)** alongside opening book & tactical accuracy cards.
-- **Interactive Analyzer Board Behavior**: Dragging or clicking pieces on the match analyzer board will power an **Interactive What-If Sandbox with instant FEN updates and a reset button**, allowing users to explore alternative tactical continuations from any PGN ply while enforcing strict turn-based move rules and legal target indicators.
+---
+
+## User Review & Confirmed Decisions
+
+> [!IMPORTANT]
+> Both architectural choices were confirmed during Phase 1 and are locked into this plan:
+
+- **Confirmed Decision 1 — Engine Evaluation Pipeline**: **Hybrid Lichess Cloud Eval + Local Multi-Ply Alpha-Beta Engine**. Every game is evaluated immediately using a deep positional + tactical alpha-beta minimax search with quiescence capture extension, enhanced asynchronously with verified Lichess Cloud Evaluation (`https://lichess.org/api/cloud-eval`) for opening/middlegame positions and critical tactical swings.
+- **Confirmed Decision 2 — Theme Initialization & Persistence**: **Default to Light Mode until toggled in the Footer**, persisting the user's explicit choice in `localStorage` (`chesspulse-theme`) across sessions.
 
 ---
 
 ## 1. Overview & Core Concept
 
-**ChessPulse** is a precision chess telemetry and Stockfish-grade match review platform built to Apple and Stripe aesthetic standards. This overhaul eliminates all non-chess template remnants, introduces a nameless sculptural 3D matte-black King centerpiece inside the iPhone 16 Pro hero frame, stabilizes piece rendering and legal move physics across the interactive chessboard, and hardens the Chess.com data ingestion pipeline through a dedicated server-side proxy.
-
-Core pillars of this upgrade:
-1. **Nameless 3D Matte-Black King Studio Centerpiece & Live Telemetry**: A pure, sculptural 3D matte-black Staunton King rendered with studio specular lighting and soft floor shadows—carrying no name or text label—paired with real-time centipawn evaluation, Stockfish depth indicators, and W/D/L win-rate percentage telemetry inside the iPhone 16 Pro Titanium showcase.
-2. **Zero-Glitch Board Physics & What-If Sandbox**: Rock-solid HTML5 drag-and-drop and click-to-move execution with glowing legal destination dots, capture rings, automatic pawn promotion handling, strict turn-lock enforcement (`White` moves only on White's turn; `Black` moves only on Black's turn), and an instant **What-If Sandbox** mode with one-click reset back to the official PGN game line.
-3. **Server-Side Chess.com API Proxy**: An Express backend proxy (`/api/chesscom/...`) that normalizes handles (`.trim().toLowerCase()`), URL-encodes parameters, attaches a compliant `User-Agent: ChessPulse-App/1.0` header, and returns structured status codes (`404` Not Found, `429` Rate Limit) for clean UI error states.
-4. **Landing Page & Navigation Polish**: Crisp typographic hierarchy, tabular numerals (`tabular-nums`) across all evaluation metrics, zero navy-blue artifacts, smooth Framer Motion scroll-reveal animations, and instantaneous top-of-page smooth scrolling (`window.scrollTo({ top: 0, behavior: 'smooth' })`) when clicking **Overview** or the **ChessPulse** brand mark.
+- **What It Does**:
+  1. **True Move-by-Move Evaluation & Strict Classification**: Evaluates `evalBefore` and `evalAfter` from the moving player's perspective using exact centipawn (`cp`) and forced-mate (`#N`) calculations, comparing the played move against the engine's top Principal Variation (`pv[0]`) and continuation line (2–3 moves deep in legal SAN notation).
+  2. **Board-Fact Tactical Explanations**: Inspects the real `chess.js` board state before and after each move to identify concrete tactical reasons (undefended hanging piece, material sacrifice/loss, pin/skewer, missed fork or checkmate sequence, king safety exposure) so the explanation, FEN, and SAN notation match 100%.
+  3. **Obsidian & Emerald Dark Mode**: Adds a refined Moon/Sun theme toggle in the bottom Footer bar that switches the entire app between the existing crisp Light Mode and a deep black (`#050505`) / anthracite card (`#111111`–`#161616`) / emerald (`#10b981`) Dark Mode with zero layout shift.
+- **Target Audience**: Competitive online chess players analyzing real Chess.com games who expect accurate centipawn evaluations, honest move classifications, and comfortable low-light study sessions.
+- **Key Value**: Eliminates false "Best Move" inflation, provides verifiable engine continuation lines, and delivers an executive dark theme tailored for long tactical training sessions.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Aesthetic Direction & Color Palette**:
-  - **Surfaces**: Pure Alabaster & Crisp White (`#FFFFFF` / `#F8FAFC`) with `1px solid` hairline slate borders (`#E2E8F0`).
-  - **Tactical Accents**: Deep Forest Green (`#0B1912`) and Emerald (`#10B981` / `#059669`) for primary actions, engine telemetry badges, and legal move indicators.
-  - **Semantic Evaluation Badges**: Cyan (`#06B6D4`) for Brilliant (`!!`), Emerald (`#10B981`) for Best (`★`), Amber (`#F59E0B`) for Inaccuracy (`?!`), Orange (`#F97316`) for Mistake (`?`), and Rose (`#F43F5E`) for Blunder (`??`).
-- **iPhone 16 Pro Showcase — 3D Matte-Black King & Engine Telemetry**:
-  - **Zero Personal Names or Mascot Labels**: The header displays clean, universal chess telemetry (`Engine Active • Stockfish 16.1 NNUE`, `Depth 32`, and `96.4% Precision` badge) with no user names (`"Elia"`, `"Sam"`, etc.) and no mascot titles.
-  - **Sculptural 3D Matte-Black King Stage**: A multi-layered 3D render of a carved obsidian-matte Staunton King piece with studio rim highlights, subtle ambient levitation, and a soft elliptical floor shadow—standing purely as a visual icon for character and craftsmanship.
-  - **Live Grandmaster Telemetry Strip**: Directly below the 3D piece, an interactive telemetry panel displays:
-    - **Real-Time Centipawn Evaluation**: e.g., `+1.45 cp` with dynamic evaluation bar fill.
-    - **Depth & Nodes Indicator**: e.g., `Depth 32/40 • 4.8M nodes/s`.
-    - **Precise Win-Rate Percentages**: Segmented W/D/L probability bar (`68.4% White • 24.1% Draw • 7.5% Black`) that updates interactively when switching between critical tactical phases (*Opening Book*, *Center Control*, *King Safety*, *Endgame Tablebase*).
-  - **Bottom Telemetry Cards**: Two crisp chess analytics cards—**Centipawn Loss (`11.2 ACPL`)** and **Win Probability (`68.4% W`)**—replacing the old `"Food"` and `"Activity"` placeholders.
-- **Interactive Board & What-If Sandbox UX**:
-  - Clicking or dragging a piece belonging to the active turn highlights the origin square and renders glowing emerald target dots on empty legal squares and crisp target rings around capturable opponent pieces.
-  - Playing a legal move on the analyzer board immediately transitions the board into **What-If Sandbox Mode**, updating the FEN state, recalculating the live centipawn evaluation bar, triggering tactile Web Audio synthesis cues, and displaying an emerald `"What-If Sandbox Active • Reset to Match Line"` control bar.
+### Key User Flows
+1. **Accurate Game & Move Inspection**:
+   - When a user loads a Chess.com match or steps through moves in the Move-by-Move Analyzer, each ply displays its exact evaluation (`+1.45`, `-0.80`, `#3`), centipawn delta, and strict classification badge (`Brilliant !!`, `Best`, `Good`, `Book`, `Inaccuracy ?!`, `Mistake ?`, `Blunder ??`).
+   - Selecting any `Inaccuracy`, `Mistake`, or `Blunder` reveals:
+     - The exact move played vs. the engine's best legal SAN move (`pv[0]`).
+     - The 2–3 move Principal Variation continuation line (e.g., `14... Nxd4 15. Bxd4 Bc5 +1.8`).
+     - A concrete explanation derived from the board state (e.g., *"Leaves the knight on f6 undefended against Qxf6"* or *"Misses a tactical fork with Nc7+ winning the rook on a8"*).
+2. **Footer Theme Toggle (`Light Mode` ↔ `Dark Mode`)**:
+   - Located in the bottom row of the Footer alongside the legal/compliance links, a sleek pill button displays a `Moon` or `Sun` icon with the label `"Dark Mode"` or `"Light Mode"`.
+   - Clicking toggles `.dark` on `document.documentElement`, saves `'dark'` or `'light'` to `localStorage.getItem('chesspulse-theme')`, and smoothly transitions all backgrounds, cards, charts, move tables, and modals without altering any spacing or geometry.
+
+### Visual Identity & Dark Mode Color Tokens
+- **Existing Layout & Structure**: Preserved 100% unchanged.
+- **Dark Mode Palette (Applied when `.dark` is active)**:
+  - **Primary Canvas Background**: Deep Obsidian Black (`#050505` / `#0a0a0a`).
+  - **Card / Panel / Modal Surfaces**: Layered Anthracite (`#111111` primary cards, `#161616` elevated/secondary panels).
+  - **Hairline Borders**: Subtle structural dividers (`#222222` / `rgba(255, 255, 255, 0.08)`).
+  - **Primary Emerald Accent**: `#10b981` (Emerald-500) for primary buttons, active tabs, high-accuracy rings, and Best Move indicators; `#059669` (Emerald-600) for hover states; `rgba(16, 185, 129, 0.12)` for subtle active row/badge highlights.
+  - **Typography & Contrast**: Crisp off-white primary text (`#f9fafb`), balanced neutral gray secondary labels (`#9ca3af`), and muted slate metadata (`#6b7280`), ensuring WCAG AA legibility across all charts, move lists, and evaluation bars.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Strict Turn-Lock vs. Free-For-All Board Editing**:
-  - *Decision*: Enforce strict turn-locking (`cell.color === activeFenTurn`) and remove any fallback that flips the FEN turn token when an out-of-turn piece is clicked.
-  - *Rationale*: Flipping the FEN turn token mid-inspection causes illegal pawn states and disappearing pieces when `chess.js` validates moves. In Sandbox mode, once the user plays a legal move for the active side, the sandbox FEN naturally advances the turn so the user can test the opponent's response in sequence.
-- **Automatic Queen Promotion on 8th/1st Rank**:
-  - *Decision*: Pass `promotion: 'q'` whenever a pawn move lands on rank `8` or `1` in `chess.js`.
-  - *Rationale*: Without an explicit promotion piece, `chess.js` rejects 8th-rank pawn moves as invalid, causing dragged pawns to vanish or snap back unexpectedly.
-- **Server-Side Express Proxy with Client Fallback**:
-  - *Decision*: Route Chess.com requests through `/api/chesscom/player/:username/matches` on the Express server with mandatory `User-Agent: ChessPulse-App/1.0` headers and in-memory short-TTL caching.
-  - *Rationale*: Browser `fetch` forbids custom `User-Agent` headers and can trigger `403`/`429` blocks from `api.chess.com`. A server-side proxy guarantees compliant headers and structured error payloads.
+- **Decision 1: Strict Centipawn Loss & PV-Matched Classification Thresholds**
+  - *Chosen Approach*:
+    - **Book**: Opening theory moves (plies 1–10) with $\le 0.20$ pawn loss.
+    - **Brilliant (`!!`)**: Sound tactical sacrifice or forcing check/capture that maintains or seizes a decisive advantage ($\ge +1.50$ swing or top-engine sacrifice).
+    - **Best**: Only when the played move matches the engine's `#1` candidate (`pv[0]`) OR loses $\le 0.05$ pawns in a non-trivial position.
+    - **Good (Excellent / Solid)**: Small centipawn loss between $0.06$ and $0.29$ pawns where the played move differs from `pv[0]`.
+    - **Inaccuracy (`?!`)**: Centipawn loss of $0.30$ to $0.79$ pawns.
+    - **Mistake (`?`)**: Centipawn loss of $0.80$ to $1.99$ pawns.
+    - **Blunder (`??`)**: Centipawn loss $\ge 2.00$ pawns, or stepping into / missing a forced mate (`#N`).
+  - *Why*: Eliminates unrealistic "Best Move" spam on ordinary developing moves while rewarding true top-engine choices.
+- **Decision 2: Hybrid Lichess Cloud Eval + Local Alpha-Beta Search with Quiescence**
+  - *Chosen Approach*: Combine a multi-ply alpha-beta minimax engine (with piece-square positional tables, mobility, king safety, passed pawn structure, and capture quiescence search to prevent horizon-effect blunders) with non-blocking Lichess Cloud Eval (`https://lichess.org/api/cloud-eval`) lookups proxied and cached cleanly.
+  - *Why*: Guarantees 100% legal moves, instant full-game analysis without browser freezing, and Grandmaster-grade cloud depth on known positions and critical tactical turns.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### System Architecture Diagram
-
+### Architecture & Component Diagram
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        CHESSPULSE CLIENT (React + Vite)                    │
-│                                                                            │
-│  ┌──────────────────────┐   ┌───────────────────────┐   ┌───────────────┐  │
-│  │   HeroSection.tsx    │   │ PerformanceDashboard  │   │ MoveByMove    │  │
-│  │  • Nameless 3D       │   │  • Live Handle Search │   │ Analyzer.tsx  │  │
-│  │    Matte-Black King  │   │  • Structured Error   │   │  • PGN Ply    │  │
-│  │  • Live CP Eval,     │   │    Banner (404 / 429) │   │    Timeline   │  │
-│  │    Depth & Win-Rate  │   │  • Accuracy Charts    │   │  • What-If    │  │
-│  └──────────────────────┘   └───────────┬───────────┘   │    Sandbox    │  │
-│                                         │               └───────┬───────┘  │
-│                                         ▼                       ▼          │
-│                           ┌───────────────────────────┐ ┌───────────────┐  │
-│                           │     chessComApi.ts        │ │ ChesscomBoard │  │
-│                           │  • Normalizes username    │ │  • Turn-Lock  │  │
-│                           │  • Parses PGN & Eval CP   │ │  • Legal Dots │  │
-│                           └─────────────┬─────────────┘ └───────────────┘  │
-└─────────────────────────────────────────┼──────────────────────────────────┘
-                                          │ GET /api/chesscom/player/:user
-                                          ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                     EXPRESS SERVER PROXY (server.ts : 3000)                │
-│  • Normalizes: username.trim().toLowerCase() + encodeURIComponent()        │
-│  • Injects Header: User-Agent: ChessPulse-App/1.0 (+https://chesspulse.app)│
-│  • Maps HTTP 404 -> USER_NOT_FOUND | HTTP 429 -> RATE_LIMITED              │
-└─────────────────────────────────────────┬──────────────────────────────────┘
-                                          │ HTTPS
-                                          ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                   CHESS.COM PUBLIC API (api.chess.com/pub)                 │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Core Data Models
-
-```typescript
-export type ApiErrorCode = 'USER_NOT_FOUND' | 'NO_GAMES_FOUND' | 'RATE_LIMITED' | 'NETWORK_ERROR';
-
-export class ChessComApiError extends Error {
-  code: ApiErrorCode;
-  status?: number;
-}
-
-export interface SandboxState {
-  isActive: boolean;
-  fen: string;
-  lastMove?: { from: string; to: string; notation: string };
-  evalScore: string;
-  evalCp: number;
-  moveHistory: string[];
-}
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        ChessPulse Application Shell                          │
+│         Theme State (localStorage 'chesspulse-theme' -> <html.dark>)         │
+└───────────────────┬──────────────────────────────────────┬───────────────────┘
+                    │                                      │
+                    ▼                                      ▼
+┌───────────────────────────────────────┐  ┌───────────────────────────────────┐
+│     Hybrid Chess Engine Pipeline      │  │   Obsidian-Emerald Theme System   │
+│  ┌─────────────────────────────────┐  │  │  ┌─────────────────────────────┐  │
+│  │ 1. Lichess Cloud Eval Lookup    │  │  │  │ Global Dark CSS Variables & │  │
+│  │    (/api/chesscom/cloud-eval)   │  │  │  │ Surface/Border Token Pairs  │  │
+│  └───────────────┬─────────────────┘  │  │  └──────────────┬──────────────┘  │
+│                  ▼                    │  │                 ▼                 │
+│  ┌─────────────────────────────────┐  │  │  ┌─────────────────────────────┐  │
+│  │ 2. Multi-Ply Alpha-Beta Search  │  │  │  │ Footer Theme Toggle Button  │  │
+│  │    + Quiescence + PST Tables    │  │  │  │ (Moon/Sun + Light/Dark)     │  │
+│  └───────────────┬─────────────────┘  │  │  └─────────────────────────────┘  │
+│                  ▼                    │  └───────────────────────────────────┘
+│  ┌─────────────────────────────────┐  │
+│  │ 3. Board-Fact Inspector         │  │
+│  │    - Exact SAN PV (2-3 plies)   │  │
+│  │    - Hanging / Fork / Pin / Mate│  │
+│  │    - Strict CP Loss Thresholds  │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
 ```
 
 ### Interactive Component & State Mapping
-
-1. **Server Proxy (`server.ts` & `package.json`)**:
-   - Mounts `/api/chesscom/player/:username` and `/api/chesscom/player/:username/matches` before Vite middleware on port `3000`.
-   - Fetches player profile, archives list, and latest monthly games JSON from `https://api.chess.com/pub/player/${encodedUsername}/...` with `User-Agent: ChessPulse-App/1.0`.
-2. **Nameless 3D Matte-Black King Hero (`HeroSection.tsx`)**:
-   - Strips all habit-tracker markup (`"Elia"`, `"Sam"`, pear/sprout mascot, mood buttons, `"Food"`, and `"Activity"` cards) and replaces them with a nameless, studio-lit 3D matte-black Staunton King centerpiece surrounded by live centipawn evaluation (`+1.45 cp`), engine search depth (`Depth 32/40`), and precise win-rate percentages (`68.4% W • 24.1% D • 7.5% L`).
-3. **Board Stability & What-If Sandbox (`ChesscomBoard.tsx` & `MoveByMoveAnalyzer.tsx`)**:
-   - `ChesscomBoard.tsx`: Computes legal moves strictly from the current `fen` without mutating turn tokens; locks drag/click start to pieces matching the active turn; auto-promotes 8th/1st-rank pawns to Queen; clears drag ghost states cleanly on `onDragEnd` and `onDrop`.
-   - `MoveByMoveAnalyzer.tsx`: Tracks `sandboxState: SandboxState | null`. When the user drags or clicks a legal move on the board, `handleSandboxMove(from, to)` updates `sandboxState` with the new `fen`, computes the dynamic material/positional evaluation score, plays the appropriate move/capture/check audio cue, and reveals a `"What-If Sandbox Active • Reset to Match Line"` banner.
+- **Engine Evaluation & PV Extraction**:
+  - For each ply, the engine computes `evalBefore`, `bestMoveSan`, `pvLineSan` (2–3 legal SAN moves ahead), and `evalAfter`.
+  - When Lichess Cloud Eval returns a multi-depth evaluation for a position, the ply's `evalScore`, `bestAlternative`, and `pvLine` upgrade seamlessly and re-verify the move classification.
+  - The board-fact analyzer inspects captured pieces, undefended squares (`isAttacked`), checks, forks (single move attacking $\ge 2$ higher-value targets), pins, and king-shield pawn advances to produce specific, accurate commentary.
+- **Theme State & Persistence**:
+  - `theme` state (`'light' | 'dark'`) initializes to `'light'` unless `localStorage.getItem('chesspulse-theme') === 'dark'`.
+  - Toggling updates `document.documentElement.classList.toggle('dark', isDark)` and persists to `localStorage`, updating the Footer toggle icon and label immediately.

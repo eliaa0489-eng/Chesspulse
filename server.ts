@@ -41,6 +41,12 @@ function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
   const entry = rateLimitMap.get(ip);
 
   if (!entry || now > entry.resetAt) {
+    if (rateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const oldestKey = rateLimitMap.keys().next().value;
+      if (oldestKey !== undefined) {
+        rateLimitMap.delete(oldestKey);
+      }
+    }
     rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return next();
   }
@@ -75,6 +81,9 @@ interface CacheEntry<T = unknown> {
 const apiCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60_000;
 
+const MAX_RATE_LIMIT_ENTRIES = 1000;
+const MAX_CACHE_ENTRIES = 200;
+
 function getCached<T>(key: string): T | null {
   const entry = apiCache.get(key);
   if (!entry) return null;
@@ -86,6 +95,12 @@ function getCached<T>(key: string): T | null {
 }
 
 function setCached<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
+  if (apiCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = apiCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      apiCache.delete(oldestKey);
+    }
+  }
   apiCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
@@ -129,7 +144,7 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
         receivedBytes += value.byteLength;
         if (receivedBytes > MAX_UPSTREAM_BYTES) {
           await reader.cancel();
-          throw new Error('Upstream response stream exceeded 2 MB limit.');
+          throw new Error('Upstream response stream exceeded 25 MB limit.');
         }
         chunks.push(value);
       }
@@ -152,7 +167,7 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
 
 function sanitizeUsername(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const cleaned = raw.trim().toLowerCase();
+  const cleaned = raw.trim().replace(/^@/, '').toLowerCase();
   if (!USERNAME_REGEX.test(cleaned)) return null;
   return cleaned;
 }
@@ -693,7 +708,7 @@ app.set('trust proxy', 1);
         return res.status(400).json({ error: 'Invalid archive URL returned by upstream.', code: 'UPSTREAM_ERROR' });
       }
 
-      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 10000);
+      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 15000);
       const gamesObj =
         typeof gamesRes.data === 'object' && gamesRes.data !== null
           ? (gamesRes.data as { games?: unknown[] })
@@ -750,6 +765,123 @@ app.set('trust proxy', 1);
       message:
         'ChessPulse is currently in free public beta for development and website adjustments (0,00 €). Nothing can be bought with real money.',
     });
+  });
+
+  // 6. Lichess Cloud Evaluation Proxy (Single FEN & Batch FENs)
+  const FEN_SAFE_REGEX = /^[rnbqkpRNBQKP1-8/]+ [wb] (-|[KQkq]{1,4}) (-|[a-h][36])( \d+ \d+)?$/;
+
+  async function queryLichessCloudFen(rawFen: unknown): Promise<{
+    found: boolean;
+    depth?: number;
+    knodes?: number;
+    cp?: number;
+    mate?: number;
+    uciMoves?: string[];
+  }> {
+    if (typeof rawFen !== 'string') return { found: false };
+    const fen = rawFen.trim();
+    if (fen.length < 15 || fen.length > 100 || !FEN_SAFE_REGEX.test(fen)) {
+      return { found: false };
+    }
+
+    const cacheKey = `lichess_eval:${fen}`;
+    const cached = getCached<{
+      found: boolean;
+      depth?: number;
+      knodes?: number;
+      cp?: number;
+      mate?: number;
+      uciMoves?: string[];
+    }>(cacheKey);
+    if (cached) return cached;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2200);
+    try {
+      const response = await fetch(
+        `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
+        {
+          method: 'GET',
+          redirect: 'error',
+          headers: {
+            'User-Agent': CHESSCOM_USER_AGENT,
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        }
+      );
+
+      if (!response.ok) {
+        const miss = { found: false };
+        setCached(cacheKey, miss, 300_000);
+        return miss;
+      }
+
+      const data = (await response.json()) as {
+        depth?: number;
+        knodes?: number;
+        pvs?: Array<{ moves?: string; cp?: number; mate?: number }>;
+      };
+
+      const firstPv = Array.isArray(data?.pvs) && data.pvs.length > 0 ? data.pvs[0] : null;
+      if (!firstPv || typeof firstPv.moves !== 'string') {
+        const miss = { found: false };
+        setCached(cacheKey, miss, 300_000);
+        return miss;
+      }
+
+      const uciMoves = firstPv.moves
+        .trim()
+        .split(/\s+/)
+        .filter((m) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
+        .slice(0, 6);
+
+      const hit = {
+        found: true,
+        depth: typeof data.depth === 'number' ? data.depth : 20,
+        knodes: typeof data.knodes === 'number' ? data.knodes : undefined,
+        cp: typeof firstPv.cp === 'number' && Number.isFinite(firstPv.cp) ? firstPv.cp : undefined,
+        mate: typeof firstPv.mate === 'number' && Number.isFinite(firstPv.mate) ? firstPv.mate : undefined,
+        uciMoves,
+      };
+      setCached(cacheKey, hit, 300_000);
+      return hit;
+    } catch {
+      return { found: false };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  app.get('/api/chesscom/cloud-eval', rateLimitMiddleware, async (req: Request, res: Response) => {
+    const result = await queryLichessCloudFen(req.query.fen);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.json(result);
+  });
+
+  app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
+    const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 24) : [];
+    const results: Record<
+      string,
+      {
+        found: boolean;
+        depth?: number;
+        knodes?: number;
+        cp?: number;
+        mate?: number;
+        uciMoves?: string[];
+      }
+    > = Object.create(null);
+
+    await Promise.all(
+      rawFens.map(async (fenItem: unknown) => {
+        if (typeof fenItem === 'string' && fenItem.length <= 100) {
+          results[fenItem] = await queryLichessCloudFen(fenItem);
+        }
+      })
+    );
+
+    return res.json({ evaluations: results });
   });
 
   // --- Frontend Serving (Vite Dev Middleware vs Production Static Dist) ---

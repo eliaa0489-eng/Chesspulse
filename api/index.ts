@@ -1,11 +1,86 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 
 const CHESSCOM_USER_AGENT = 'ChessPulse-App/1.0 (contact: support@chesspulse.app)';
 const USERNAME_REGEX = /^[a-z0-9_-]{2,40}$/;
+const MAX_UPSTREAM_BYTES = 25 * 1024 * 1024; // 25 MB cap for large monthly archives
+
+// --- Bounded In-Memory Rate Limiter (keyed by req.ip) ---
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+const rateLimitMap = new Map<string, RateLimitEntry>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 60;
+const MAX_RATE_LIMIT_ENTRIES = 1000;
+
+function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    if (rateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const oldestKey = rateLimitMap.keys().next().value;
+      if (oldestKey !== undefined) rateLimitMap.delete(oldestKey);
+    }
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  entry.count += 1;
+  if (entry.count > RATE_LIMIT_MAX_REQUESTS) {
+    res.setHeader('Retry-After', Math.ceil((entry.resetAt - now) / 1000).toString());
+    return res.status(429).json({
+      error: 'Too many requests. Please wait a moment before trying again.',
+      code: 'RATE_LIMITED',
+    });
+  }
+
+  return next();
+}
+
+// --- Bounded In-Memory Upstream Cache (60s TTL) ---
+interface CacheEntry<T = unknown> {
+  data: T;
+  expiresAt: number;
+}
+const apiCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60_000;
+const MAX_CACHE_ENTRIES = 200;
+
+function getCached<T>(key: string): T | null {
+  const entry = apiCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    apiCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function setCached<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
+  if (apiCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = apiCache.keys().next().value;
+    if (oldestKey !== undefined) apiCache.delete(oldestKey);
+  }
+  apiCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+
+// Strict Security Headers on all API responses
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+});
+
 app.use(express.json({ limit: '32kb' }));
 
 function sanitizeUsername(raw: unknown): string | null {
@@ -36,6 +111,7 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
   try {
     const response = await fetch(url, {
       method: 'GET',
+      redirect: 'error',
       headers: {
         'User-Agent': CHESSCOM_USER_AGENT,
         Accept: 'application/json',
@@ -44,6 +120,10 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
     });
     if (!response.ok) {
       return { status: response.status, data: null };
+    }
+    const contentLengthHeader = response.headers.get('content-length');
+    if (contentLengthHeader && Number(contentLengthHeader) > MAX_UPSTREAM_BYTES) {
+      throw new Error('Upstream response exceeds maximum allowed size (25 MB).');
     }
     const data = await response.json();
     return { status: response.status, data };
@@ -143,11 +223,11 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'ChessPulse Vercel Proxy', betaMode: true });
 });
 
-app.post('/api/analytics/event', (_req: Request, res: Response) => {
+app.post('/api/analytics/event', rateLimitMiddleware, (_req: Request, res: Response) => {
   res.status(202).json({ ok: true });
 });
 
-app.get('/api/chesscom/avatar/:username', (req: Request, res: Response) => {
+app.get('/api/chesscom/avatar/:username', rateLimitMiddleware, (req: Request, res: Response) => {
   const username = sanitizeUsername(req.params.username) || 'cp';
   const initials = username.slice(0, 2).toUpperCase();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
@@ -156,79 +236,207 @@ app.get('/api/chesscom/avatar/:username', (req: Request, res: Response) => {
   <text x="40" y="47" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" font-size="24" font-weight="800">${initials}</text>
 </svg>`;
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
   res.send(svg);
 });
 
-app.get(['/api/chesscom/player/:username/overview', '/api/chesscom/player/:username/stats', '/api/stats/:username', '/api/stats'], async (req: Request, res: Response) => {
-  const username = sanitizeUsername(req.params.username || req.query.username);
-  if (!username) {
-    return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
-  }
-  try {
-    const [profileRes, statsRes] = await Promise.all([
-      fetchChessComJson(`https://api.chess.com/pub/player/${encodeURIComponent(username)}`),
-      fetchChessComJson(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`),
-    ]);
-    if (profileRes.status === 404) {
-      return res.status(404).json({ error: `Player "${username}" was not found on Chess.com.`, code: 'USER_NOT_FOUND' });
+app.get(
+  ['/api/chesscom/player/:username/overview', '/api/chesscom/player/:username/stats', '/api/stats/:username', '/api/stats'],
+  rateLimitMiddleware,
+  async (req: Request, res: Response) => {
+    const username = sanitizeUsername(req.params.username || req.query.username);
+    if (!username) {
+      return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
     }
-    if (profileRes.status !== 200 || !profileRes.data) {
-      return res.status(502).json({ error: 'Unable to retrieve profile from Chess.com API.', code: 'UPSTREAM_ERROR' });
-    }
-    const profileDto = buildSafeProfileDto(profileRes.data, username);
-    const statsDto = buildSafeStatsDto(statsRes.data);
-    return res.json({
-      ...statsDto,
-      profile: profileDto,
-      stats: statsDto,
-    });
-  } catch {
-    return res.status(502).json({ error: 'Upstream Chess.com API request failed.', code: 'UPSTREAM_ERROR' });
-  }
-});
 
-app.get(['/api/chesscom/player/:username/matches', '/api/matches/:username', '/api/matches'], async (req: Request, res: Response) => {
-  const username = sanitizeUsername(req.params.username || req.query.username);
-  if (!username) {
-    return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
-  }
-  const rawLimit = Number(req.query.limit);
-  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 25) : 12;
+    const cacheKey = `overview:${username}`;
+    const cached = getCached<any>(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120');
+      return res.json(cached);
+    }
 
-  try {
-    const archivesRes = await fetchChessComJson(
-      `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`
-    );
-    if (archivesRes.status === 404) {
-      return res.status(404).json({ error: 'No game archives found for this player.', code: 'USER_NOT_FOUND' });
+    try {
+      const [profileRes, statsRes] = await Promise.all([
+        fetchChessComJson(`https://api.chess.com/pub/player/${encodeURIComponent(username)}`),
+        fetchChessComJson(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`),
+      ]);
+      if (profileRes.status === 404) {
+        return res.status(404).json({ error: `Player "${username}" was not found on Chess.com.`, code: 'USER_NOT_FOUND' });
+      }
+      if (profileRes.status === 429 || statsRes.status === 429) {
+        return res.status(429).json({ error: 'Upstream Chess.com API rate limit reached.', code: 'RATE_LIMITED' });
+      }
+      if (profileRes.status !== 200 || !profileRes.data) {
+        return res.status(502).json({ error: 'Unable to retrieve profile from Chess.com API.', code: 'UPSTREAM_ERROR' });
+      }
+      const profileDto = buildSafeProfileDto(profileRes.data, username);
+      const statsDto = buildSafeStatsDto(statsRes.data);
+      const payload = {
+        ...statsDto,
+        profile: profileDto,
+        stats: statsDto,
+      };
+      setCached(cacheKey, payload);
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120');
+      return res.json(payload);
+    } catch {
+      return res.status(502).json({ error: 'Upstream Chess.com API request failed.', code: 'UPSTREAM_ERROR' });
     }
-    const archiveList = Array.isArray(archivesRes.data?.archives) ? archivesRes.data.archives : [];
-    if (archiveList.length === 0) {
-      return res.json({ games: [] });
-    }
-    const latestArchiveUrl = archiveList[archiveList.length - 1];
-    const gamesRes = await fetchChessComJson(latestArchiveUrl, 15000);
-    const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
-    const sorted = [...rawGames].sort((a, b) => (b?.end_time || 0) - (a?.end_time || 0));
-    const games = [];
-    for (const item of sorted) {
-      if (games.length >= limit) break;
-      const dto = buildSafeMatchGameDto(item);
-      if (dto) games.push(dto);
-    }
-    return res.json({ games });
-  } catch {
-    return res.status(502).json({ error: 'Failed to retrieve recent matches from Chess.com.', code: 'UPSTREAM_ERROR' });
   }
-});
+);
 
-app.post('/api/beta-waitlist', (_req: Request, res: Response) => {
+app.get(
+  ['/api/chesscom/player/:username/matches', '/api/matches/:username', '/api/matches'],
+  rateLimitMiddleware,
+  async (req: Request, res: Response) => {
+    const username = sanitizeUsername(req.params.username || req.query.username);
+    if (!username) {
+      return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
+    }
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 25) : 12;
+
+    const cacheKey = `matches:${username}:${limit}`;
+    const cached = getCached<{ games: any[] }>(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120');
+      return res.json(cached);
+    }
+
+    try {
+      const archivesRes = await fetchChessComJson(
+        `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`
+      );
+      if (archivesRes.status === 404) {
+        return res.status(404).json({ error: 'No game archives found for this player.', code: 'USER_NOT_FOUND' });
+      }
+      const archiveList = Array.isArray(archivesRes.data?.archives) ? archivesRes.data.archives : [];
+      if (archiveList.length === 0) {
+        return res.json({ games: [] });
+      }
+      const latestArchiveRaw = archiveList[archiveList.length - 1];
+      if (typeof latestArchiveRaw !== 'string') {
+        return res.json({ games: [] });
+      }
+      // Strict SSRF validation: archive URL must point to https://api.chess.com
+      const archiveUrl = new URL(latestArchiveRaw);
+      if (archiveUrl.protocol !== 'https:' || archiveUrl.hostname !== 'api.chess.com') {
+        return res.status(400).json({ error: 'Invalid archive URL returned by upstream.', code: 'UPSTREAM_ERROR' });
+      }
+
+      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 15000);
+      const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
+      const sorted = [...rawGames].sort((a, b) => (b?.end_time || 0) - (a?.end_time || 0));
+      const games = [];
+      for (const item of sorted) {
+        if (games.length >= limit) break;
+        const dto = buildSafeMatchGameDto(item);
+        if (dto) games.push(dto);
+      }
+      const payload = { games };
+      setCached(cacheKey, payload);
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120');
+      return res.json(payload);
+    } catch {
+      return res.status(502).json({ error: 'Failed to retrieve recent matches from Chess.com.', code: 'UPSTREAM_ERROR' });
+    }
+  }
+);
+
+app.post('/api/beta-waitlist', rateLimitMiddleware, (_req: Request, res: Response) => {
   res.json({
     success: true,
     betaMode: true,
     message: 'ChessPulse is currently in free public beta (0,00 €). Nothing can be bought with real money.',
   });
+});
+
+const FEN_SAFE_REGEX = /^[rnbqkpRNBQKP1-8/]+ [wb] (-|[KQkq]{1,4}) (-|[a-h][36])( \d+ \d+)?$/;
+
+async function queryLichessCloudFen(rawFen: unknown) {
+  if (typeof rawFen !== 'string') return { found: false };
+  const fen = rawFen.trim();
+  if (fen.length < 15 || fen.length > 100 || !FEN_SAFE_REGEX.test(fen)) {
+    return { found: false };
+  }
+
+  const cacheKey = `lichess_eval:${fen}`;
+  const cached = getCached<any>(cacheKey);
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2200);
+  try {
+    const response = await fetch(
+      `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
+      {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          'User-Agent': CHESSCOM_USER_AGENT,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      }
+    );
+
+    if (!response.ok) {
+      const miss = { found: false };
+      setCached(cacheKey, miss, 300_000);
+      return miss;
+    }
+
+    const data: any = await response.json();
+    const firstPv = Array.isArray(data?.pvs) && data.pvs.length > 0 ? data.pvs[0] : null;
+    if (!firstPv || typeof firstPv.moves !== 'string') {
+      const miss = { found: false };
+      setCached(cacheKey, miss, 300_000);
+      return miss;
+    }
+
+    const uciMoves = firstPv.moves
+      .trim()
+      .split(/\s+/)
+      .filter((m: string) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
+      .slice(0, 6);
+
+    const hit = {
+      found: true,
+      depth: typeof data.depth === 'number' ? data.depth : 20,
+      knodes: typeof data.knodes === 'number' ? data.knodes : undefined,
+      cp: typeof firstPv.cp === 'number' && Number.isFinite(firstPv.cp) ? firstPv.cp : undefined,
+      mate: typeof firstPv.mate === 'number' && Number.isFinite(firstPv.mate) ? firstPv.mate : undefined,
+      uciMoves,
+    };
+    setCached(cacheKey, hit, 300_000);
+    return hit;
+  } catch {
+    return { found: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.get('/api/chesscom/cloud-eval', rateLimitMiddleware, async (req: Request, res: Response) => {
+  const result = await queryLichessCloudFen(req.query.fen);
+  res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+  return res.json(result);
+});
+
+app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
+  const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 24) : [];
+  const results: Record<string, any> = Object.create(null);
+
+  await Promise.all(
+    rawFens.map(async (fenItem: unknown) => {
+      if (typeof fenItem === 'string' && fenItem.length <= 100) {
+        results[fenItem] = await queryLichessCloudFen(fenItem);
+      }
+    })
+  );
+
+  return res.json({ evaluations: results });
 });
 
 export default app;

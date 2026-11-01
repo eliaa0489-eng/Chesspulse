@@ -94,6 +94,9 @@ export interface AnalyzedPly {
   classification: MoveClassification;
   explanation: string;
   bestAlternative?: string;
+  pvLine?: string;
+  cpLoss?: number;
+  engineSource?: 'lichess-cloud' | 'alpha-beta';
   tacticalThreat?: string;
 }
 
