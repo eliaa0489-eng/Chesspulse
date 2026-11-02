@@ -791,39 +791,119 @@ app.set('trust proxy', 1);
     });
   });
 
-  // 6. Lichess Cloud Evaluation Proxy (Single FEN & Batch FENs)
+  // 6. All-Time Archive List & Monthly Archive Routes
+  app.get('/api/chesscom/player/:username/archives', rateLimitMiddleware, async (req: Request, res: Response) => {
+    const username = sanitizeUsername(req.params.username);
+    if (!username) {
+      return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
+    }
+
+    const cacheKey = `archives_list:${username}`;
+    const cached = getCached<{ archives: string[] }>(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=120');
+      return res.json(cached);
+    }
+
+    try {
+      const archivesRes = await fetchChessComJson(
+        `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`,
+        6000
+      );
+      if (archivesRes.status === 404) {
+        return res.status(404).json({ error: 'Player archives not found.', code: 'USER_NOT_FOUND' });
+      }
+      const rawData = archivesRes.data as { archives?: unknown[] } | null;
+      const rawList = Array.isArray(rawData?.archives) ? rawData.archives : [];
+      const safeArchives = rawList.filter(
+        (u: unknown): u is string =>
+          typeof u === 'string' && /^https:\/\/api\.chess\.com\/pub\/player\/[a-z0-9_-]+\/games\/\d{4}\/\d{2}$/i.test(u)
+      );
+      const payload = { archives: safeArchives };
+      setCached(cacheKey, payload, 120_000);
+      res.setHeader('Cache-Control', 'public, max-age=120');
+      return res.json(payload);
+    } catch {
+      return res.status(502).json({ error: 'Failed to retrieve archive list from Chess.com.', code: 'UPSTREAM_ERROR' });
+    }
+  });
+
+  app.get(
+    '/api/chesscom/player/:username/archive/:year/:month',
+    rateLimitMiddleware,
+    async (req: Request, res: Response) => {
+      const username = sanitizeUsername(req.params.username);
+      const year = String(req.params.year || '').trim();
+      const month = String(req.params.month || '').trim().padStart(2, '0');
+      if (!username || !/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+        return res.status(400).json({ error: 'Invalid archive parameters.', code: 'INVALID_PARAMS' });
+      }
+
+      const cacheKey = `archive_month:${username}:${year}:${month}`;
+      const cached = getCached<{ games: SafeMatchGameDto[] }>(cacheKey);
+      if (cached) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        return res.json(cached);
+      }
+
+      try {
+        const url = `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/${year}/${month}`;
+        const gamesRes = await fetchChessComJson(url, 6000);
+        if (gamesRes.status === 404) {
+          return res.json({ games: [] });
+        }
+        const rawData = gamesRes.data as { games?: unknown[] } | null;
+        const rawGames = Array.isArray(rawData?.games) ? rawData.games : [];
+        const games: SafeMatchGameDto[] = [];
+        for (const item of rawGames) {
+          const dto = buildSafeMatchGameDto(item);
+          if (dto) games.push(dto);
+        }
+        const payload = { games };
+        setCached(cacheKey, payload, 300_000);
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        return res.json(payload);
+      } catch {
+        return res.status(502).json({ error: 'Failed to retrieve monthly archive.', code: 'UPSTREAM_ERROR' });
+      }
+    }
+  );
+
+  // 7. Lichess Cloud Evaluation Proxy (MultiPV=3) & Lichess Masters Opening Explorer
   const FEN_SAFE_REGEX = /^[rnbqkpRNBQKP1-8/]+ [wb] (-|[KQkq]{1,4}) (-|[a-h][36])( \d+ \d+)?$/;
 
-  async function queryLichessCloudFen(rawFen: unknown): Promise<{
+  interface CloudEvalPvItem {
+    cp?: number;
+    mate?: number;
+    uciMoves: string[];
+  }
+
+  interface CloudEvalHit {
     found: boolean;
     depth?: number;
     knodes?: number;
     cp?: number;
     mate?: number;
     uciMoves?: string[];
-  }> {
+    pvs?: CloudEvalPvItem[];
+  }
+
+  async function queryLichessCloudFen(rawFen: unknown): Promise<CloudEvalHit> {
     if (typeof rawFen !== 'string') return { found: false };
     const fen = rawFen.trim();
     if (fen.length < 15 || fen.length > 100 || !FEN_SAFE_REGEX.test(fen)) {
       return { found: false };
     }
 
-    const cacheKey = `lichess_eval:${fen}`;
-    const cached = getCached<{
-      found: boolean;
-      depth?: number;
-      knodes?: number;
-      cp?: number;
-      mate?: number;
-      uciMoves?: string[];
-    }>(cacheKey);
+    const cacheKey = `lichess_eval_mpv3:${fen}`;
+    const cached = getCached<CloudEvalHit>(cacheKey);
     if (cached) return cached;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2200);
+    const timer = setTimeout(() => controller.abort(), 2800);
     try {
       const response = await fetch(
-        `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
+        `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=3`,
         {
           method: 'GET',
           redirect: 'error',
@@ -847,31 +927,96 @@ app.set('trust proxy', 1);
         pvs?: Array<{ moves?: string; cp?: number; mate?: number }>;
       };
 
-      const firstPv = Array.isArray(data?.pvs) && data.pvs.length > 0 ? data.pvs[0] : null;
-      if (!firstPv || typeof firstPv.moves !== 'string') {
+      const rawPvs = Array.isArray(data?.pvs) ? data.pvs : [];
+      if (rawPvs.length === 0 || typeof rawPvs[0]?.moves !== 'string') {
         const miss = { found: false };
         setCached(cacheKey, miss, 300_000);
         return miss;
       }
 
-      const uciMoves = firstPv.moves
-        .trim()
-        .split(/\s+/)
-        .filter((m) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
-        .slice(0, 6);
+      const parsedPvs: CloudEvalPvItem[] = rawPvs.slice(0, 3).map((pv) => {
+        const uciMoves =
+          typeof pv?.moves === 'string'
+            ? pv.moves
+                .trim()
+                .split(/\s+/)
+                .filter((m) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
+                .slice(0, 6)
+            : [];
+        return {
+          cp: typeof pv?.cp === 'number' && Number.isFinite(pv.cp) ? pv.cp : undefined,
+          mate: typeof pv?.mate === 'number' && Number.isFinite(pv.mate) ? pv.mate : undefined,
+          uciMoves,
+        };
+      });
 
-      const hit = {
+      const firstPv = parsedPvs[0];
+      const hit: CloudEvalHit = {
         found: true,
-        depth: typeof data.depth === 'number' ? data.depth : 20,
+        depth: typeof data.depth === 'number' ? data.depth : 22,
         knodes: typeof data.knodes === 'number' ? data.knodes : undefined,
-        cp: typeof firstPv.cp === 'number' && Number.isFinite(firstPv.cp) ? firstPv.cp : undefined,
-        mate: typeof firstPv.mate === 'number' && Number.isFinite(firstPv.mate) ? firstPv.mate : undefined,
-        uciMoves,
+        cp: firstPv.cp,
+        mate: firstPv.mate,
+        uciMoves: firstPv.uciMoves,
+        pvs: parsedPvs,
       };
       setCached(cacheKey, hit, 300_000);
       return hit;
     } catch {
       return { found: false };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function queryLichessOpeningExplorer(rawFen: unknown) {
+    if (typeof rawFen !== 'string') return { isBook: false };
+    const fen = rawFen.trim();
+    if (fen.length < 15 || fen.length > 100 || !FEN_SAFE_REGEX.test(fen)) {
+      return { isBook: false };
+    }
+
+    const cacheKey = `lichess_masters:${fen}`;
+    const cached = getCached<any>(cacheKey);
+    if (cached) return cached;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    try {
+      const response = await fetch(
+        `https://explorer.lichess.ovh/masters?fen=${encodeURIComponent(fen)}&moves=5&topGames=0`,
+        {
+          method: 'GET',
+          redirect: 'error',
+          headers: {
+            'User-Agent': CHESSCOM_USER_AGENT,
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        }
+      );
+
+      if (!response.ok) {
+        return { isBook: false };
+      }
+
+      const data = (await response.json()) as {
+        white?: number;
+        draws?: number;
+        black?: number;
+        opening?: { eco?: string; name?: string };
+      };
+      const totalGames = (data?.white || 0) + (data?.draws || 0) + (data?.black || 0);
+      const result = {
+        isBook: totalGames >= 2 || Boolean(data?.opening?.name),
+        eco: data?.opening?.eco,
+        name: data?.opening?.name,
+        totalGames,
+      };
+      setCached(cacheKey, result, 600_000);
+      return result;
+    } catch {
+      return { isBook: false };
     } finally {
       clearTimeout(timer);
     }
@@ -884,18 +1029,8 @@ app.set('trust proxy', 1);
   });
 
   app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
-    const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 8) : [];
-    const results: Record<
-      string,
-      {
-        found: boolean;
-        depth?: number;
-        knodes?: number;
-        cp?: number;
-        mate?: number;
-        uciMoves?: string[];
-      }
-    > = Object.create(null);
+    const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 14) : [];
+    const results: Record<string, CloudEvalHit> = Object.create(null);
 
     await Promise.all(
       rawFens.map(async (fenItem: unknown) => {
@@ -906,6 +1041,12 @@ app.set('trust proxy', 1);
     );
 
     return res.json({ evaluations: results });
+  });
+
+  app.get('/api/chesscom/opening-explorer', rateLimitMiddleware, async (req: Request, res: Response) => {
+    const result = await queryLichessOpeningExplorer(req.query.fen);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    return res.json(result);
   });
 
   // --- Frontend Serving (Vite Dev Middleware vs Production Static Dist) ---

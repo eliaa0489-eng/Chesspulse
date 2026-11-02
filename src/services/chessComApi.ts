@@ -52,6 +52,78 @@ export interface LivePlayerStats {
   recentGames: RecentGameSummary[];
 }
 
+export interface ColorWinLossBreakdown {
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  winPct: number;
+  drawPct: number;
+  lossPct: number;
+}
+
+export interface CareerOpeningItem {
+  eco: string;
+  name: string;
+  totalGames: number;
+  white: ColorWinLossBreakdown;
+  black: ColorWinLossBreakdown;
+}
+
+export interface TerminationBreakdown {
+  winsByCheckmate: number;
+  winsByTimeout: number;
+  winsByResignation: number;
+  lossesByCheckmate: number;
+  lossesByTimeout: number;
+  lossesByResignation: number;
+  drawsByAgreement: number;
+  drawsByRepetition: number;
+  drawsByStalemateOrInsufficient: number;
+}
+
+export interface HistoricalRatingNode {
+  archiveId: string; // YYYY-MM
+  label: string; // e.g. "Jan 24"
+  timestamp: number;
+  rating: number;
+  timeClass: 'blitz' | 'rapid' | 'bullet' | 'daily';
+  gamesInMonth: number;
+  winRateInMonth: number;
+}
+
+export interface AllTimeCareerScanProgress {
+  isScanning: boolean;
+  isComplete: boolean;
+  processedArchives: number;
+  totalArchives: number;
+  totalGamesAnalyzed: number;
+  currentArchiveLabel: string;
+  statusText: string;
+  percent: number;
+}
+
+export interface AllTimeCareerAggregate {
+  username: string;
+  totalArchives: number;
+  processedArchives: number;
+  totalGames: number;
+  overall: ColorWinLossBreakdown;
+  white: ColorWinLossBreakdown;
+  black: ColorWinLossBreakdown;
+  byTimeClass: {
+    bullet: ColorWinLossBreakdown;
+    blitz: ColorWinLossBreakdown;
+    rapid: ColorWinLossBreakdown;
+    daily: ColorWinLossBreakdown;
+  };
+  allTimePeakRating: number;
+  peakTimeClass: string;
+  terminations: TerminationBreakdown;
+  topOpenings: CareerOpeningItem[];
+  ratingTimeline: HistoricalRatingNode[];
+}
+
 /**
  * Strictly sanitizes and lowercases a Chess.com handle.
  * Returns empty string if invalid.
@@ -83,7 +155,6 @@ export function validateChessComUrl(rawUrl: unknown): string | undefined {
 
 /**
  * Generates a deterministic local SVG Data URI avatar (DSGVO / Zero External CDN Requests).
- * Never triggers third-party requests and never fails with 404 on static/serverless hosts.
  */
 export function getLocalAvatarPath(username: string): string {
   const safe = sanitizeChessHandle(username) || 'cp';
@@ -93,8 +164,7 @@ export function getLocalAvatarPath(username: string): string {
 }
 
 /**
- * Prevents React Error #31 ("Objects are not valid as a React child (found: object with keys {code, message})")
- * by strictly coercing any error payload or platform error object into a plain string.
+ * Prevents React Error #31 by strictly coercing any error payload into a plain string.
  */
 export function toSafeErrorString(raw: unknown, fallback: string): string {
   if (typeof raw === 'string' && raw.trim()) return raw.trim();
@@ -175,7 +245,7 @@ function parseRawGamesToRecentSummaries(rawGames: unknown[], cleanHandle: string
 }
 
 // --- Client-Side In-Memory TTL Cache & In-Flight Request Deduplication ---
-const CLIENT_CACHE_TTL_MS = 60_000; // 60 seconds
+const CLIENT_CACHE_TTL_MS = 60_000;
 const MAX_CLIENT_CACHE_ENTRIES = 60;
 
 interface ClientCacheEntry<T> {
@@ -221,16 +291,12 @@ function setInClientCache<T>(map: Map<string, ClientCacheEntry<T>>, key: string,
   map.set(key, { value, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
-  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    return await fetch(url, {
-      method: 'GET',
-      credentials: 'same-origin',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  }
+async function fetchWithTimeout(url: string, timeoutMs = 6000, externalSignal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
   try {
     return await fetch(url, {
       method: 'GET',
@@ -239,6 +305,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response
     });
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -294,8 +361,7 @@ async function fetchDirectPublicChessComGames(
 
 /**
  * Fetches live player statistics and recent match summaries from our secure backend proxy,
- * with automatic fallback to the public Chess.com API if the serverless route is cold or unavailable.
- * Uses in-memory TTL caching and in-flight request deduplication for instant performance.
+ * with automatic fallback to the public Chess.com API.
  */
 export async function fetchLivePlayerStats(
   username: string
@@ -372,7 +438,6 @@ export async function fetchLivePlayerStats(
       // Will try direct public API fallback below
     }
 
-    // Fallback to direct public Chess.com API if proxy route returned HTML/404/502 on serverless host
     if (!profileObj || !statsObj) {
       const directOverview = await fetchDirectPublicChessComOverview(cleanHandle);
       if (directOverview === 'NOT_FOUND') {
@@ -475,7 +540,6 @@ function extractPgnHeader(pgn: string, headerName: string): string | undefined {
 
 /**
  * Fetches real recent Chess.com matches for a player with explicit status codes.
- * Uses in-memory TTL caching and in-flight request deduplication.
  */
 export async function fetchRealPlayerMatchesWithStatus(
   username: string,
@@ -565,89 +629,89 @@ export async function fetchRealPlayerMatchesWithStatus(
       rawGames = directGames;
     }
 
-  const matches: ChessComMatch[] = [];
-  for (let i = 0; i < rawGames.length; i++) {
-    const g = rawGames[i] as Record<string, unknown>;
-    const rawPgn = typeof g.pgn === 'string' && g.pgn.length <= 100_000 ? g.pgn : '';
-    if (!rawPgn) continue;
+    const matches: ChessComMatch[] = [];
+    for (let i = 0; i < rawGames.length; i++) {
+      const g = rawGames[i] as Record<string, unknown>;
+      const rawPgn = typeof g.pgn === 'string' && g.pgn.length <= 100_000 ? g.pgn : '';
+      if (!rawPgn) continue;
 
-    const whiteObj = (g.white as Record<string, unknown>) || {};
-    const blackObj = (g.black as Record<string, unknown>) || {};
-    const wUsername = typeof whiteObj.username === 'string' ? whiteObj.username : 'White';
-    const bUsername = typeof blackObj.username === 'string' ? blackObj.username : 'Black';
-    const wRating = typeof whiteObj.rating === 'number' ? Math.round(whiteObj.rating) : 1200;
-    const bRating = typeof blackObj.rating === 'number' ? Math.round(blackObj.rating) : 1200;
-    const wResult = typeof whiteObj.result === 'string' ? whiteObj.result : 'unknown';
-    const bResult = typeof blackObj.result === 'string' ? blackObj.result : 'unknown';
+      const whiteObj = (g.white as Record<string, unknown>) || {};
+      const blackObj = (g.black as Record<string, unknown>) || {};
+      const wUsername = typeof whiteObj.username === 'string' ? whiteObj.username : 'White';
+      const bUsername = typeof blackObj.username === 'string' ? blackObj.username : 'Black';
+      const wRating = typeof whiteObj.rating === 'number' ? Math.round(whiteObj.rating) : 1200;
+      const bRating = typeof blackObj.rating === 'number' ? Math.round(blackObj.rating) : 1200;
+      const wResult = typeof whiteObj.result === 'string' ? whiteObj.result : 'unknown';
+      const bResult = typeof blackObj.result === 'string' ? blackObj.result : 'unknown';
 
-    const userColor: 'white' | 'black' =
-      wUsername.toLowerCase() === cleanHandle ? 'white' : 'black';
-    const userSideResult = userColor === 'white' ? wResult : bResult;
+      const userColor: 'white' | 'black' =
+        wUsername.toLowerCase() === cleanHandle ? 'white' : 'black';
+      const userSideResult = userColor === 'white' ? wResult : bResult;
 
-    let userWon: boolean | 'draw' = false;
-    let userResultText = 'Lost';
-    if (userSideResult === 'win') {
-      userWon = true;
-      userResultText = 'Won';
-    } else if (
-      ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
-        userSideResult
-      )
-    ) {
-      userWon = 'draw';
-      userResultText = 'Draw';
-    } else if (userSideResult === 'timeout') {
-      userResultText = 'Lost on time';
-    } else if (userSideResult === 'checkmated') {
-      userResultText = 'Checkmated';
-    } else if (userSideResult === 'resigned') {
-      userResultText = 'Resigned';
+      let userWon: boolean | 'draw' = false;
+      let userResultText = 'Lost';
+      if (userSideResult === 'win') {
+        userWon = true;
+        userResultText = 'Won';
+      } else if (
+        ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(
+          userSideResult
+        )
+      ) {
+        userWon = 'draw';
+        userResultText = 'Draw';
+      } else if (userSideResult === 'timeout') {
+        userResultText = 'Lost on time';
+      } else if (userSideResult === 'checkmated') {
+        userResultText = 'Checkmated';
+      } else if (userSideResult === 'resigned') {
+        userResultText = 'Resigned';
+      }
+
+      const endTime = typeof g.end_time === 'number' ? g.end_time : Math.floor(Date.now() / 1000);
+      const dateFormatted = new Date(endTime * 1000).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+
+      const rawTimeClass = typeof g.time_class === 'string' ? g.time_class : 'blitz';
+      const timeClass: 'blitz' | 'rapid' | 'bullet' | 'daily' =
+        rawTimeClass === 'rapid' || rawTimeClass === 'bullet' || rawTimeClass === 'daily'
+          ? rawTimeClass
+          : 'blitz';
+
+      const timeControlLabel =
+        timeClass === 'rapid'
+          ? 'Rapid 10+0'
+          : timeClass === 'bullet'
+          ? 'Bullet 1+0'
+          : timeClass === 'daily'
+          ? 'Daily'
+          : 'Blitz 3+2';
+
+      const safeUrl =
+        validateChessComUrl(g.url) ||
+        `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`;
+
+      matches.push({
+        id: `match-${cleanHandle}-${endTime}-${i}`,
+        url: safeUrl,
+        pgn: rawPgn,
+        timeControl: timeControlLabel,
+        timeClass,
+        endTime,
+        dateFormatted,
+        white: { username: wUsername, rating: wRating, result: wResult },
+        black: { username: bUsername, rating: bRating, result: bResult },
+        userColor,
+        userWon,
+        userResultText,
+        eco: extractPgnHeader(rawPgn, 'ECO') || 'B90',
+        openingName:
+          extractPgnHeader(rawPgn, 'ECOUrl')?.split('/').pop()?.replace(/-/g, ' ') ||
+          'Standard Opening',
+      });
     }
-
-    const endTime = typeof g.end_time === 'number' ? g.end_time : Math.floor(Date.now() / 1000);
-    const dateFormatted = new Date(endTime * 1000).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
-
-    const rawTimeClass = typeof g.time_class === 'string' ? g.time_class : 'blitz';
-    const timeClass: 'blitz' | 'rapid' | 'bullet' | 'daily' =
-      rawTimeClass === 'rapid' || rawTimeClass === 'bullet' || rawTimeClass === 'daily'
-        ? rawTimeClass
-        : 'blitz';
-
-    const timeControlLabel =
-      timeClass === 'rapid'
-        ? 'Rapid 10+0'
-        : timeClass === 'bullet'
-        ? 'Bullet 1+0'
-        : timeClass === 'daily'
-        ? 'Daily'
-        : 'Blitz 3+2';
-
-    const safeUrl =
-      validateChessComUrl(g.url) ||
-      `https://www.chess.com/member/${encodeURIComponent(cleanHandle)}`;
-
-    matches.push({
-      id: `match-${cleanHandle}-${endTime}-${i}`,
-      url: safeUrl,
-      pgn: rawPgn,
-      timeControl: timeControlLabel,
-      timeClass,
-      endTime,
-      dateFormatted,
-      white: { username: wUsername, rating: wRating, result: wResult },
-      black: { username: bUsername, rating: bRating, result: bResult },
-      userColor,
-      userWon,
-      userResultText,
-      eco: extractPgnHeader(rawPgn, 'ECO') || 'B90',
-      openingName:
-        extractPgnHeader(rawPgn, 'ECOUrl')?.split('/').pop()?.replace(/-/g, ' ') ||
-        'Standard Opening',
-    });
-  }
 
     const result = {
       code: 'OK' as const,
@@ -666,10 +730,566 @@ export async function fetchRealPlayerMatchesWithStatus(
   }
 }
 
+// ============================================================================
+// PART 2: Staged All-Time Archive Loader & IndexedDB Career Cache
+// ============================================================================
+
+interface CompactArchiveGameRecord {
+  endTime: number;
+  timeClass: 'bullet' | 'blitz' | 'rapid' | 'daily';
+  userColor: 'white' | 'black';
+  userRating: number;
+  userResult: string;
+  oppResult: string;
+  eco: string;
+  openingName: string;
+}
+
+const IDB_DB_NAME = 'chesspulse_career_cache_v1';
+const IDB_STORE_NAME = 'monthly_archives';
+
+function openCareerIndexedDb(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+          db.createObjectStore(IDB_STORE_NAME);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function getCachedArchiveRecords(
+  db: IDBDatabase | null,
+  key: string
+): Promise<CompactArchiveGameRecord[] | null> {
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE_NAME, 'readonly');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        if (Array.isArray(req.result)) {
+          resolve(req.result as CompactArchiveGameRecord[]);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function setCachedArchiveRecords(
+  db: IDBDatabase | null,
+  key: string,
+  records: CompactArchiveGameRecord[]
+): Promise<void> {
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      store.put(records, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function parseRawArchiveGameToCompactRecord(
+  rawGame: Record<string, unknown>,
+  cleanHandle: string
+): CompactArchiveGameRecord | null {
+  const whiteObj = (rawGame.white as Record<string, unknown>) || {};
+  const blackObj = (rawGame.black as Record<string, unknown>) || {};
+  const wUsername = typeof whiteObj.username === 'string' ? whiteObj.username : '';
+  const bUsername = typeof blackObj.username === 'string' ? blackObj.username : '';
+  if (!wUsername && !bUsername) return null;
+
+  const isWhite = wUsername.toLowerCase() === cleanHandle;
+  const userSide = isWhite ? whiteObj : blackObj;
+  const oppSide = isWhite ? blackObj : whiteObj;
+
+  const userRating =
+    typeof userSide.rating === 'number' && Number.isFinite(userSide.rating)
+      ? Math.round(userSide.rating)
+      : 1200;
+  const userResult = typeof userSide.result === 'string' ? userSide.result : 'unknown';
+  const oppResult = typeof oppSide.result === 'string' ? oppSide.result : 'unknown';
+  const endTime = typeof rawGame.end_time === 'number' ? rawGame.end_time : 0;
+
+  const rawTc = typeof rawGame.time_class === 'string' ? rawGame.time_class : 'blitz';
+  const timeClass: 'bullet' | 'blitz' | 'rapid' | 'daily' =
+    rawTc === 'bullet' || rawTc === 'rapid' || rawTc === 'daily' ? rawTc : 'blitz';
+
+  const rawPgn = typeof rawGame.pgn === 'string' ? rawGame.pgn : '';
+  const eco = extractPgnHeader(rawPgn, 'ECO') || (typeof rawGame.eco === 'string' ? rawGame.eco.split('/').pop() || 'B00' : 'B00');
+  const rawEcoUrl =
+    extractPgnHeader(rawPgn, 'ECOUrl') || (typeof rawGame.eco === 'string' ? rawGame.eco : '');
+  const slug = rawEcoUrl ? rawEcoUrl.split('/').pop() || '' : '';
+  const cleanedOpening = slug
+    ? slug
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .slice(0, 48)
+    : extractPgnHeader(rawPgn, 'Opening') || `Opening (${eco})`;
+
+  return {
+    endTime,
+    timeClass,
+    userColor: isWhite ? 'white' : 'black',
+    userRating,
+    userResult,
+    oppResult,
+    eco: eco.slice(0, 6),
+    openingName: cleanedOpening,
+  };
+}
+
+function finalizeBreakdown(wins: number, draws: number, losses: number): ColorWinLossBreakdown {
+  const games = wins + draws + losses;
+  if (games === 0) {
+    return { games: 0, wins: 0, draws: 0, losses: 0, winPct: 0, drawPct: 0, lossPct: 0 };
+  }
+  const winPct = Math.round((wins / games) * 1000) / 10;
+  const drawPct = Math.round((draws / games) * 1000) / 10;
+  const lossPct = Math.max(0, Math.round((100 - winPct - drawPct) * 10) / 10);
+  return { games, wins, draws, losses, winPct, drawPct, lossPct };
+}
+
+/**
+ * Fetches the list of all monthly archive URLs for a player (`YYYY/MM`).
+ */
+async function fetchPlayerArchiveUrlList(
+  cleanHandle: string,
+  signal?: AbortSignal
+): Promise<string[]> {
+  try {
+    const proxyRes = await fetchWithTimeout(
+      `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/archives`,
+      7000,
+      signal
+    );
+    if (proxyRes.ok && (proxyRes.headers.get('content-type') || '').includes('application/json')) {
+      const payload = (await proxyRes.json()) as { archives?: string[] };
+      if (Array.isArray(payload?.archives) && payload.archives.length > 0) {
+        return payload.archives;
+      }
+    }
+  } catch {
+    // Fallback to direct Chess.com archives endpoint
+  }
+
+  try {
+    const directRes = await fetchWithTimeout(
+      `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/archives`,
+      7000,
+      signal
+    );
+    if (directRes.ok) {
+      const payload = (await directRes.json()) as { archives?: string[] };
+      if (Array.isArray(payload?.archives)) {
+        return payload.archives;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  return [];
+}
+
+/**
+ * Fetches a single monthly archive (`YYYY`, `MM`) via proxy or direct Chess.com fallback.
+ */
+async function fetchSingleMonthlyArchiveGames(
+  cleanHandle: string,
+  year: string,
+  month: string,
+  signal?: AbortSignal
+): Promise<CompactArchiveGameRecord[]> {
+  let rawGames: Record<string, unknown>[] | null = null;
+
+  try {
+    const proxyRes = await fetchWithTimeout(
+      `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/archive/${year}/${month}`,
+      8500,
+      signal
+    );
+    if (proxyRes.ok && (proxyRes.headers.get('content-type') || '').includes('application/json')) {
+      const data = (await proxyRes.json()) as { games?: Record<string, unknown>[] };
+      if (Array.isArray(data?.games)) {
+        rawGames = data.games;
+      }
+    }
+  } catch {
+    // Fallback to direct public API below
+  }
+
+  if (rawGames === null) {
+    try {
+      const directRes = await fetchWithTimeout(
+        `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/${year}/${month}`,
+        8500,
+        signal
+      );
+      if (directRes.ok) {
+        const data = (await directRes.json()) as { games?: Record<string, unknown>[] };
+        if (Array.isArray(data?.games)) {
+          rawGames = data.games;
+        }
+      }
+    } catch {
+      rawGames = [];
+    }
+  }
+
+  if (!rawGames || rawGames.length === 0) return [];
+
+  const compact: CompactArchiveGameRecord[] = [];
+  for (let i = 0; i < rawGames.length; i++) {
+    const parsed = parseRawArchiveGameToCompactRecord(rawGames[i], cleanHandle);
+    if (parsed) compact.push(parsed);
+  }
+  return compact;
+}
+
+/**
+ * Staged All-Time Archive Scanner ("Take Your Time for 100% Accuracy").
+ * Iterates through all monthly archives of a player in controlled batches, caches past months in IndexedDB,
+ * and emits live incremental statistics + progress updates after every archive batch.
+ */
+export async function scanAllTimePlayerArchives(
+  username: string,
+  onProgress: (progress: AllTimeCareerScanProgress, aggregate: AllTimeCareerAggregate) => void,
+  signal?: AbortSignal
+): Promise<AllTimeCareerAggregate | null> {
+  const cleanHandle = sanitizeChessHandle(username);
+  if (!cleanHandle) return null;
+
+  const archiveUrls = await fetchPlayerArchiveUrlList(cleanHandle, signal);
+  if (signal?.aborted || archiveUrls.length === 0) return null;
+
+  // Parse valid { year, month } pairs from archive URLs
+  const parsedArchives: Array<{ year: string; month: string; id: string }> = [];
+  for (const url of archiveUrls) {
+    const match = String(url).match(/\/games\/(\d{4})\/(0[1-9]|1[0-2])$/);
+    if (match) {
+      parsedArchives.push({
+        year: match[1],
+        month: match[2],
+        id: `${match[1]}-${match[2]}`,
+      });
+    }
+  }
+
+  if (parsedArchives.length === 0) return null;
+
+  const totalArchives = parsedArchives.length;
+  const db = await openCareerIndexedDb();
+  const nowDate = new Date();
+  const currentYearStr = String(nowDate.getUTCFullYear());
+  const currentMonthStr = String(nowDate.getUTCMonth() + 1).padStart(2, '0');
+
+  // Running accumulators across all processed archives
+  let totalGames = 0;
+  let whiteWins = 0;
+  let whiteDraws = 0;
+  let whiteLosses = 0;
+  let blackWins = 0;
+  let blackDraws = 0;
+  let blackLosses = 0;
+
+  const tcCounts: Record<
+    'bullet' | 'blitz' | 'rapid' | 'daily',
+    { w: number; d: number; l: number }
+  > = {
+    bullet: { w: 0, d: 0, l: 0 },
+    blitz: { w: 0, d: 0, l: 0 },
+    rapid: { w: 0, d: 0, l: 0 },
+    daily: { w: 0, d: 0, l: 0 },
+  };
+
+  let allTimePeakRating = 0;
+  let peakTimeClass = 'Blitz';
+
+  const terminations: TerminationBreakdown = {
+    winsByCheckmate: 0,
+    winsByTimeout: 0,
+    winsByResignation: 0,
+    lossesByCheckmate: 0,
+    lossesByTimeout: 0,
+    lossesByResignation: 0,
+    drawsByAgreement: 0,
+    drawsByRepetition: 0,
+    drawsByStalemateOrInsufficient: 0,
+  };
+
+  const openingMap = new Map<
+    string,
+    {
+      eco: string;
+      name: string;
+      wW: number;
+      wD: number;
+      wL: number;
+      bW: number;
+      bD: number;
+      bL: number;
+    }
+  >();
+
+  const ratingTimeline: HistoricalRatingNode[] = [];
+
+  const buildSnapshotAggregate = (processedCount: number): AllTimeCareerAggregate => {
+    const whiteBreak = finalizeBreakdown(whiteWins, whiteDraws, whiteLosses);
+    const blackBreak = finalizeBreakdown(blackWins, blackDraws, blackLosses);
+    const overallBreak = finalizeBreakdown(
+      whiteWins + blackWins,
+      whiteDraws + blackDraws,
+      whiteLosses + blackLosses
+    );
+
+    const topOpenings: CareerOpeningItem[] = Array.from(openingMap.values())
+      .map((item) => {
+        const w = finalizeBreakdown(item.wW, item.wD, item.wL);
+        const b = finalizeBreakdown(item.bW, item.bD, item.bL);
+        return {
+          eco: item.eco,
+          name: item.name,
+          totalGames: w.games + b.games,
+          white: w,
+          black: b,
+        };
+      })
+      .sort((a, b) => b.totalGames - a.totalGames)
+      .slice(0, 12);
+
+    return {
+      username: cleanHandle,
+      totalArchives,
+      processedArchives: processedCount,
+      totalGames,
+      overall: overallBreak,
+      white: whiteBreak,
+      black: blackBreak,
+      byTimeClass: {
+        bullet: finalizeBreakdown(tcCounts.bullet.w, tcCounts.bullet.d, tcCounts.bullet.l),
+        blitz: finalizeBreakdown(tcCounts.blitz.w, tcCounts.blitz.d, tcCounts.blitz.l),
+        rapid: finalizeBreakdown(tcCounts.rapid.w, tcCounts.rapid.d, tcCounts.rapid.l),
+        daily: finalizeBreakdown(tcCounts.daily.w, tcCounts.daily.d, tcCounts.daily.l),
+      },
+      allTimePeakRating,
+      peakTimeClass,
+      terminations: { ...terminations },
+      topOpenings,
+      ratingTimeline: [...ratingTimeline],
+    };
+  };
+
+  const ingestArchiveRecords = (
+    arch: { year: string; month: string; id: string },
+    records: CompactArchiveGameRecord[]
+  ) => {
+    if (records.length === 0) return;
+
+    let monthWins = 0;
+    let monthTotal = 0;
+    let latestMonthGame: CompactArchiveGameRecord | null = null;
+
+    for (const g of records) {
+      totalGames++;
+      monthTotal++;
+
+      if (g.userRating > allTimePeakRating) {
+        allTimePeakRating = g.userRating;
+        peakTimeClass = g.timeClass.toUpperCase();
+      }
+
+      if (!latestMonthGame || g.endTime >= latestMonthGame.endTime) {
+        latestMonthGame = g;
+      }
+
+      const isWin = g.userResult === 'win';
+      const isDraw = [
+        'agreed',
+        'repetition',
+        'stalemate',
+        'insufficient',
+        '50move',
+        'timevsinsufficient',
+      ].includes(g.userResult);
+
+      if (isWin) {
+        monthWins++;
+        if (g.userColor === 'white') whiteWins++;
+        else blackWins++;
+        tcCounts[g.timeClass].w++;
+
+        if (g.oppResult === 'checkmated') terminations.winsByCheckmate++;
+        else if (g.oppResult === 'timeout' || g.oppResult === 'abandoned') terminations.winsByTimeout++;
+        else terminations.winsByResignation++;
+      } else if (isDraw) {
+        if (g.userColor === 'white') whiteDraws++;
+        else blackDraws++;
+        tcCounts[g.timeClass].d++;
+
+        if (g.userResult === 'agreed') terminations.drawsByAgreement++;
+        else if (g.userResult === 'repetition') terminations.drawsByRepetition++;
+        else terminations.drawsByStalemateOrInsufficient++;
+      } else {
+        if (g.userColor === 'white') whiteLosses++;
+        else blackLosses++;
+        tcCounts[g.timeClass].l++;
+
+        if (g.userResult === 'checkmated') terminations.lossesByCheckmate++;
+        else if (g.userResult === 'timeout' || g.userResult === 'abandoned') terminations.lossesByTimeout++;
+        else terminations.lossesByResignation++;
+      }
+
+      // Opening aggregation
+      const openKey = `${g.eco}::${g.openingName.toLowerCase()}`;
+      let entry = openingMap.get(openKey);
+      if (!entry) {
+        entry = {
+          eco: g.eco,
+          name: g.openingName,
+          wW: 0,
+          wD: 0,
+          wL: 0,
+          bW: 0,
+          bD: 0,
+          bL: 0,
+        };
+        openingMap.set(openKey, entry);
+      }
+
+      if (g.userColor === 'white') {
+        if (isWin) entry.wW++;
+        else if (isDraw) entry.wD++;
+        else entry.wL++;
+      } else {
+        if (isWin) entry.bW++;
+        else if (isDraw) entry.bD++;
+        else entry.bL++;
+      }
+    }
+
+    if (latestMonthGame) {
+      const monthDate = new Date(
+        parseInt(arch.year, 10),
+        parseInt(arch.month, 10) - 1,
+        1
+      );
+      const label = monthDate.toLocaleDateString('en-US', {
+        month: 'short',
+        year: '2-digit',
+      });
+      ratingTimeline.push({
+        archiveId: arch.id,
+        label,
+        timestamp: latestMonthGame.endTime || Math.floor(monthDate.getTime() / 1000),
+        rating: latestMonthGame.userRating,
+        timeClass: latestMonthGame.timeClass,
+        gamesInMonth: monthTotal,
+        winRateInMonth: monthTotal > 0 ? Math.round((monthWins / monthTotal) * 1000) / 10 : 0,
+      });
+    }
+  };
+
+  // Process all archives in controlled batches of 2 so we never trigger rate limits
+  // and provide smooth, transparent live progress updates.
+  const BATCH_SIZE = 2;
+
+  for (let i = 0; i < parsedArchives.length; i += BATCH_SIZE) {
+    if (signal?.aborted) return null;
+
+    const batch = parsedArchives.slice(i, i + BATCH_SIZE);
+    let anyNetworkFetch = false;
+
+    const batchResults = await Promise.all(
+      batch.map(async (arch) => {
+        const isCurrentMonth = arch.year === currentYearStr && arch.month === currentMonthStr;
+        const cacheKey = `${cleanHandle}::${arch.year}-${arch.month}`;
+
+        if (!isCurrentMonth) {
+          const cached = await getCachedArchiveRecords(db, cacheKey);
+          if (cached) {
+            return { arch, records: cached };
+          }
+        }
+
+        anyNetworkFetch = true;
+        const fetched = await fetchSingleMonthlyArchiveGames(
+          cleanHandle,
+          arch.year,
+          arch.month,
+          signal
+        );
+        if (!isCurrentMonth && fetched.length > 0) {
+          await setCachedArchiveRecords(db, cacheKey, fetched);
+        }
+        return { arch, records: fetched };
+      })
+    );
+
+    if (signal?.aborted) return null;
+
+    for (const item of batchResults) {
+      ingestArchiveRecords(item.arch, item.records);
+    }
+
+    const processedCount = Math.min(totalArchives, i + batch.length);
+    const lastArch = batch[batch.length - 1];
+    const percent = Math.round((processedCount / totalArchives) * 100);
+    const snapshot = buildSnapshotAggregate(processedCount);
+
+    onProgress(
+      {
+        isScanning: processedCount < totalArchives,
+        isComplete: processedCount >= totalArchives,
+        processedArchives: processedCount,
+        totalArchives,
+        totalGamesAnalyzed: totalGames,
+        currentArchiveLabel: `${lastArch.year}/${lastArch.month}`,
+        statusText:
+          processedCount < totalArchives
+            ? `Deep Career Scan in progress: Processing Archive ${processedCount} / ${totalArchives} (${totalGames.toLocaleString()} Games analyzed – taking time for 100% accuracy)...`
+            : `All-Time Career Scan Complete: ${totalArchives} / ${totalArchives} Archives (${totalGames.toLocaleString()} Games verified).`,
+        percent,
+      },
+      snapshot
+    );
+
+    if (processedCount < totalArchives) {
+      // Deliberate pause between batches to respect Chess.com rate limits and keep UI responsive
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, anyNetworkFetch ? 220 : 35)
+      );
+    }
+  }
+
+  return buildSnapshotAggregate(totalArchives);
+}
+
 /**
  * Fetches full PlayerProfile for AnalysisModal & PersonalPuzzlesPage.
- * Strictly enforces Zero Fake Data Fallback: throws a descriptive Error if the player
- * is not found or if the upstream request fails.
  */
 export async function fetchChessComUserData(username: string): Promise<PlayerProfile> {
   const [statsRes, matchesRes] = await Promise.all([

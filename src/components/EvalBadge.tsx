@@ -1,5 +1,4 @@
 import React from 'react';
-import { Sparkles, Star, AlertTriangle, AlertOctagon, HelpCircle, BookOpen, Check } from 'lucide-react';
 import { MoveClassification } from '../types/chess';
 
 interface EvalBadgeProps {
@@ -9,162 +8,143 @@ interface EvalBadgeProps {
   className?: string;
 }
 
+interface ClassificationStyleMeta {
+  symbol: string;
+  label: string;
+  hexBg: string;
+  textColorOnCircle: string;
+  pillClasses: string;
+  title: string;
+}
+
+export const CLASSIFICATION_META: Record<MoveClassification, ClassificationStyleMeta> = {
+  brilliant: {
+    symbol: '!!',
+    label: 'Brilliant',
+    hexBg: '#1baca6',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#1baca6]/12 text-[#0f766e] dark:text-[#2dd4bf] border-[#1baca6]/40',
+    title: 'Brilliant (!!): Genuine tactical piece sacrifice that is top engine choice (PV1) and maintains/seizes the advantage',
+  },
+  great: {
+    symbol: '!',
+    label: 'Great Move',
+    hexBg: '#5c8bb0',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#5c8bb0]/15 text-[#2c5282] dark:text-[#90cdf4] border-[#5c8bb0]/45',
+    title: 'Great Move (!): Critical "Only Move" where PV1 outperforms PV2 by >= 15% Win Probability or punishes an opponent error',
+  },
+  best: {
+    symbol: '★',
+    label: 'Best Move',
+    hexBg: '#96bc4b',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#96bc4b]/15 text-[#3f6212] dark:text-[#a3e635] border-[#96bc4b]/45',
+    title: 'Best Move (★): Exact top engine recommendation (PV1) with <= 1.5% Win Probability loss',
+  },
+  excellent: {
+    symbol: '👍',
+    label: 'Excellent',
+    hexBg: '#96bc4b',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#96bc4b]/12 text-[#4d7c0f] dark:text-[#bef264] border-[#96bc4b]/35',
+    title: 'Excellent (👍): Strong engine continuation with minimal Win Probability loss (1.5% – 4.2%)',
+  },
+  good: {
+    symbol: '✓',
+    label: 'Good',
+    hexBg: '#97af8b',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#97af8b]/18 text-[#3f5238] dark:text-[#cbd5e1] border-[#97af8b]/45',
+    title: 'Good (✓): Solid playable move with moderate Win Probability loss (4.2% – 8.0%)',
+  },
+  book: {
+    symbol: '📖',
+    label: 'Book',
+    hexBg: '#a88865',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#a88865]/15 text-[#6b4f35] dark:text-[#d6bc9b] border-[#a88865]/45',
+    title: 'Book Move (📖): Verified ECO / Lichess Masters opening theory move',
+  },
+  inaccuracy: {
+    symbol: '?!',
+    label: 'Inaccuracy',
+    hexBg: '#f7c631',
+    textColorOnCircle: '#1e293b',
+    pillClasses: 'bg-[#f7c631]/18 text-[#854d0e] dark:text-[#fde047] border-[#f7c631]/55',
+    title: 'Inaccuracy (?!): Suboptimal move losing 8.0% – 14.0% Win Probability',
+  },
+  mistake: {
+    symbol: '?',
+    label: 'Mistake',
+    hexBg: '#e6912c',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#e6912c]/15 text-[#9a3412] dark:text-[#fdba74] border-[#e6912c]/50',
+    title: 'Mistake (?): Clear error losing 14.0% – 24.0% Win Probability',
+  },
+  miss: {
+    symbol: '✖',
+    label: 'Miss',
+    hexBg: '#e06c55',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#e06c55]/15 text-[#991b1b] dark:text-[#fca5a5] border-[#e06c55]/50',
+    title: 'Miss (✖): Missed a direct tactical punishment after an opponent error',
+  },
+  blunder: {
+    symbol: '??',
+    label: 'Blunder',
+    hexBg: '#ca3431',
+    textColorOnCircle: '#ffffff',
+    pillClasses: 'bg-[#ca3431]/15 text-[#991b1b] dark:text-[#f87171] border-[#ca3431]/55',
+    title: 'Blunder (??): Severe blunder losing > 24.0% Win Probability or allowing forced mate',
+  },
+};
+
 export function EvalBadge({
   classification,
   showLabel = true,
   size = 'sm',
   className = '',
 }: EvalBadgeProps) {
-  switch (classification) {
-    case 'brilliant':
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-cyan-50 text-cyan-800 border border-cyan-300 shadow-xs hover:border-cyan-400 ${className}`}
-          title="Brilliant (!!): Exceptional tactical sacrifice creating a decisive advantage"
-        >
-          {/* 💎 Brilliant: Vibrant Cyan (#26C281 / text-cyan-500), sparkling diamond icon + !! */}
-          <span className="w-4 h-4 rounded-full bg-[#06B6D4] text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-xs">
-            !!
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-cyan-900 font-extrabold">
-              <Sparkles className="w-3 h-3 text-cyan-600 fill-cyan-400" />
-              <span>Brilliant</span>
-            </span>
-          )}
-        </span>
-      );
+  const meta = CLASSIFICATION_META[classification] || CLASSIFICATION_META.good;
 
-    case 'best':
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-xs hover:border-emerald-400 ${className}`}
-          title="Best Move (★): Engine's highest depth choice"
-        >
-          {/* ⭐ Best Move: Emerald Green (#589632), checkmark/star icon */}
-          <span className="w-4 h-4 rounded-full bg-[#589632] text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-xs">
-            ★
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-emerald-900 font-extrabold">
-              <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
-              <span>Best</span>
-            </span>
-          )}
-        </span>
-      );
-
-    case 'good':
-    case 'inaccuracy':
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-amber-50 text-amber-900 border border-amber-300 shadow-xs hover:border-amber-400 ${className}`}
-          title="Inaccuracy (?!): Suboptimal move dropping 0.3-0.7 pawns"
-        >
-          {/* ⚠️ Good / Inaccuracy: Golden Amber (#F1C40F), question mark over exclamation mark ?! */}
-          <span className="w-4 h-4 rounded-full bg-[#F1C40F] text-slate-900 flex items-center justify-center text-[9px] font-black shrink-0 shadow-xs">
-            ?!
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-amber-900 font-extrabold">
-              <AlertTriangle className="w-3 h-3 text-amber-600" />
-              <span>Inaccuracy</span>
-            </span>
-          )}
-        </span>
-      );
-
-    case 'mistake':
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-orange-50 text-orange-900 border border-orange-300 shadow-xs hover:border-orange-400 ${className}`}
-          title="Mistake (?): Tactically flawed move creating a notable disadvantage"
-        >
-          {/* ⚡ Mistake: Bright Orange (#E67E22), single question mark icon */}
-          <span className="w-4 h-4 rounded-full bg-[#E67E22] text-white flex items-center justify-center text-[10px] font-black shrink-0 shadow-xs">
-            ?
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-orange-900 font-extrabold">
-              <HelpCircle className="w-3 h-3 text-orange-600" />
-              <span>Mistake</span>
-            </span>
-          )}
-        </span>
-      );
-
-    case 'blunder':
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-rose-50 text-rose-900 border border-rose-300 shadow-xs hover:border-rose-400 animate-pulse ${className}`}
-          title="Blunder (??): Critical tactical error severely worsening the position"
-        >
-          {/* ❌ Blunder: Deep Crimson Red (#C0392B), alert/cross icon + double question mark ?? */}
-          <span className="w-4 h-4 rounded-full bg-[#C0392B] text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-xs">
-            ??
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-rose-900 font-extrabold">
-              <AlertOctagon className="w-3 h-3 text-rose-600 fill-rose-100" />
-              <span>Blunder</span>
-            </span>
-          )}
-        </span>
-      );
-
-    case 'book':
-    default:
-      return (
-        <span
-          className={`inline-flex items-center gap-1.5 font-bold rounded-full select-none transition-all ${
-            size === 'xs'
-              ? 'px-1.5 py-0.5 text-[10px]'
-              : size === 'sm'
-              ? 'px-2 py-0.5 text-xs'
-              : 'px-3 py-1 text-xs'
-          } bg-slate-100 text-slate-800 border border-slate-200 ${className}`}
-          title="Book Move: Standard opening theory"
-        >
-          <span className="w-4 h-4 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[9px] font-bold shrink-0">
-            📖
-          </span>
-          {showLabel && (
-            <span className="flex items-center gap-1 text-slate-700 font-medium">
-              <BookOpen className="w-3 h-3 text-slate-400" />
-              <span>Book</span>
-            </span>
-          )}
-        </span>
-      );
+  // Compact circular badge rendered directly on the chessboard target square corner
+  if (!showLabel) {
+    return (
+      <span
+        style={{ backgroundColor: meta.hexBg, color: meta.textColorOnCircle }}
+        title={meta.title}
+        className={`inline-flex items-center justify-center rounded-full font-black select-none ring-2 ring-white/95 shadow-md ${
+          size === 'xs'
+            ? 'w-5 h-5 text-[10px]'
+            : size === 'sm'
+            ? 'w-6 h-6 text-[11px]'
+            : 'w-7 h-7 text-xs'
+        } ${className}`}
+      >
+        {meta.symbol}
+      </span>
+    );
   }
+
+  return (
+    <span
+      title={meta.title}
+      className={`inline-flex items-center gap-1.5 font-bold rounded-full border select-none transition-all ${
+        size === 'xs'
+          ? 'px-1.5 py-0.5 text-[10px]'
+          : size === 'sm'
+          ? 'px-2 py-0.5 text-xs'
+          : 'px-3 py-1 text-xs'
+      } ${meta.pillClasses} ${className}`}
+    >
+      <span
+        style={{ backgroundColor: meta.hexBg, color: meta.textColorOnCircle }}
+        className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs"
+      >
+        {meta.symbol}
+      </span>
+      <span className="font-extrabold tracking-tight">{meta.label}</span>
+    </span>
+  );
 }

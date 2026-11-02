@@ -74,12 +74,29 @@ export interface OpeningStat {
 
 export type MoveClassification =
   | 'brilliant'
+  | 'great'
   | 'best'
+  | 'excellent'
   | 'good'
+  | 'book'
   | 'inaccuracy'
   | 'mistake'
-  | 'blunder'
-  | 'book';
+  | 'miss'
+  | 'blunder';
+
+export interface MultiPvCandidate {
+  multipv: number;
+  cp: number;
+  pawns: number;
+  mate?: number;
+  winProb: number;
+  bestMoveSan: string;
+  bestMoveUci: string;
+  bestMoveFrom: string;
+  bestMoveTo: string;
+  pvSan: string[];
+  pvLine: string;
+}
 
 export interface AnalyzedPly {
   plyIndex: number;
@@ -89,15 +106,25 @@ export interface AnalyzedPly {
   fromSquare: string;
   toSquare: string;
   fen: string;
-  evalScore: string;       // e.g. "+3.4", "-1.8", "0.0"
+  evalScore: string;       // e.g. "+3.4", "-1.8", "0.0", "+M3"
   evalDelta?: string;      // e.g. "-4.2", "+2.5"
+  winProb?: number;        // White win probability (0-100%)
+  moverWinProbBefore?: number;
+  moverWinProbAfter?: number;
+  winProbLoss?: number;    // 0-100% win probability lost by mover
+  moveAccuracy?: number;   // Official CAPS2 move accuracy (0-100%)
   classification: MoveClassification;
   explanation: string;
   bestAlternative?: string;
   pvLine?: string;
+  multiPv?: MultiPvCandidate[];
   cpLoss?: number;
-  engineSource?: 'lichess-cloud' | 'alpha-beta';
+  depth?: number;
+  engineDepth?: number;
+  engineSource?: 'stockfish-worker' | 'lichess-cloud' | 'lichess-masters' | 'alpha-beta';
   tacticalThreat?: string;
+  outOfBook?: boolean;
+  openingName?: string;
 }
 
 export interface ChessComMatch {
@@ -115,6 +142,7 @@ export interface ChessComMatch {
   userResultText: string;
   eco?: string;
   openingName?: string;
+  officialAccuracy?: { white?: number; black?: number };
 }
 
 export interface CoachReport {
@@ -125,9 +153,11 @@ export interface CoachReport {
     color: 'white' | 'black';
     notation: string;
     evalDrop: number;
+    winProbDrop?: number;
     classification: MoveClassification;
     motif: string;
     refutation: string;
+    bestContinuation?: string;
   }[];
   phaseBreakdown: {
     opening: { accuracy: number; commentary: string };
@@ -149,8 +179,28 @@ export interface FullMatchAnalysis {
   event: string;
   timeControl: string;
   result: string;
+  openingName?: string;
+  openingEco?: string;
+  eco?: string;
+  outOfBookMove?: number;
   accuracy: { white: number; black: number };
+  performanceRating?: { white: number; black: number };
+  classificationCounts?: {
+    white: Record<MoveClassification, number>;
+    black: Record<MoveClassification, number>;
+  };
   plies: AnalyzedPly[];
   detectedPuzzles?: TacticalPuzzle[];
   coachReport?: CoachReport;
+}
+
+export interface DeepAnalysisProgress {
+  currentPly: number;
+  totalPlies: number;
+  moveNumber?: number;
+  depth: number;
+  multiPv: number;
+  phaseLabel: string;
+  statusText?: string;
+  percent: number;
 }

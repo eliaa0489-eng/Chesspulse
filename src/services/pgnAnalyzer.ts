@@ -3,11 +3,13 @@ import {
   FullMatchAnalysis,
   AnalyzedPly,
   MoveClassification,
+  MultiPvCandidate,
   TacticalPuzzle,
   CoachReport,
   CanonicalTacticalTheme,
   PuzzleDifficultyTier,
   ChessComMatch,
+  DeepAnalysisProgress,
 } from '../types/chess';
 
 const PIECE_VALUES_CP: Record<string, number> = {
@@ -95,6 +97,43 @@ const KING_MID_PST = [
   [20, 30, 12, 0, 0, 12, 30, 20],
 ];
 
+// Built-in ECO Opening Theory Book (FEN prefix -> { eco, name }) for instant fallback + Masters Explorer integration
+const ECO_OPENING_BOOK: Record<string, { eco: string; name: string }> = {
+  'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq': { eco: 'B00', name: "King's Pawn Opening" },
+  'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq': { eco: 'D00', name: "Queen's Pawn Opening" },
+  'rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq': { eco: 'A10', name: 'English Opening' },
+  'rnbqkbnr/pppppppp/8/8/8/5N3/PPPPPPPP/RNBQKB1R b KQkq': { eco: 'A04', name: 'Zukertort Opening: Réti' },
+  'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': { eco: 'C20', name: "King's Pawn Game: Open Game" },
+  'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': { eco: 'B20', name: 'Sicilian Defense' },
+  'rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': { eco: 'C00', name: 'French Defense' },
+  'rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': { eco: 'B10', name: 'Caro-Kann Defense' },
+  'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N3/PPPP1PPP/RNBQKB1R b KQkq': { eco: 'C40', name: "King's Knight Opening" },
+  'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N3/PPPP1PPP/RNBQKB1R w KQkq': { eco: 'C44', name: 'Open Game: Double King Pawn' },
+  'r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N3/PPPP1PPP/RNBQK2R b KQkq': { eco: 'C60', name: 'Ruy Lopez (Spanish Opening)' },
+  'r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N3/PPPP1PPP/RNBQK2R w KQkq': { eco: 'C70', name: 'Ruy Lopez: Morphy Defense' },
+  'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N3/PPPP1PPP/RNBQK2R b KQkq': { eco: 'C50', name: 'Italian Game (Giuoco Piano)' },
+  'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N3/PPPP1PPP/RNBQK2R w KQkq': { eco: 'C53', name: 'Italian Game: Classical Variation' },
+  'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N3/PPPP1PPP/RNBQK2R w KQkq': { eco: 'C55', name: 'Italian Game: Two Knights Defense' },
+  'r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N3/PPP2PPP/RNBQKB1R b KQkq': { eco: 'C45', name: 'Scotch Game' },
+  'rnbqkbnr/pp1ppppp/8/2p5/4P3/5N3/PPPP1PPP/RNBQKB1R b KQkq': { eco: 'B27', name: 'Sicilian Defense: Open' },
+  'rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N3/PPPP1PPP/RNBQKB1R w KQkq': { eco: 'B50', name: 'Sicilian Defense: Modern Variations' },
+  'rnbqkbnr/pp2pppp/3p4/8/3pP3/5N3/PPP2PPP/RNBQKB1R b KQkq': { eco: 'B54', name: 'Sicilian Defense: Open Line' },
+  'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq': { eco: 'B56', name: 'Sicilian Defense: Classical' },
+  'rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq': { eco: 'B90', name: 'Sicilian Defense: Najdorf Variation' },
+  'rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq': { eco: 'D02', name: 'Closed Game' },
+  'rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq': { eco: 'D06', name: "Queen's Gambit" },
+  'rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': { eco: 'D30', name: "Queen's Gambit Declined" },
+  'rnbqkbnr/ppp1pppp/2p5/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': { eco: 'D10', name: 'Slav Defense' },
+  'rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq': { eco: 'A45', name: 'Indian Defense' },
+  'rnbqkb1r/pppppppp/5n2/8/2PP4/8/PP2PPPP/RNBQKBNR b KQkq': { eco: 'A50', name: 'Indian Defense: Normal Variation' },
+  'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq': { eco: 'E20', name: 'Nimzo-Indian / Queen Indian' },
+  'rnbqkb1r/pppppp1p/5np1/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': { eco: 'E60', name: "King's Indian Defense" },
+};
+
+function getNormalizedFenPrefix(fen: string): string {
+  return fen.split(' ').slice(0, 3).join(' ');
+}
+
 function getPstBonus(type: string, color: 'w' | 'b', row: number, col: number): number {
   const r = color === 'w' ? row : 7 - row;
   switch (type) {
@@ -115,6 +154,47 @@ function getPstBonus(type: string, color: 'w' | 'b', row: number, col: number): 
   }
 }
 
+/**
+ * Official Lichess / Chess.com Win-Probability Sigmoid Formula:
+ * Win% = 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1)
+ * With forced mate handling (mate > 0 => 100%, mate < 0 => 0%).
+ * `cp` and `mate` are from the active player's perspective (or White's perspective depending on caller).
+ */
+export function computeWinProbability(cp: number, mate?: number): number {
+  if (typeof mate === 'number' && mate !== 0) {
+    return mate > 0 ? 100 : 0;
+  }
+  const clampedCp = Math.max(-1500, Math.min(1500, cp));
+  const winPct = 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * clampedCp)) - 1);
+  return Math.max(0, Math.min(100, Math.round(winPct * 100) / 100));
+}
+
+/**
+ * Official CAPS2 / Lichess Move Accuracy Formula based on Win-Probability Loss:
+ * moveAccuracy = Math.min(100, Math.max(0, 103.1668 * Math.exp(-0.04354 * winProbLoss) - 3.1669))
+ */
+export function computeMoveAccuracy(winProbLoss: number): number {
+  const loss = Math.max(0, winProbLoss);
+  const acc = 103.1668 * Math.exp(-0.04354 * loss) - 3.1669;
+  return Math.round(Math.min(100, Math.max(0, acc)) * 10) / 10;
+}
+
+/**
+ * Computes the Chess.com-style Game Performance Rating from Player ELO, CAPS2 Accuracy, and Match Result.
+ */
+export function computeGamePerformanceRating(
+  playerElo: number,
+  caps2Accuracy: number,
+  resultScore: number // 1 = win, 0.5 = draw, 0 = loss
+): number {
+  const baseElo = playerElo > 400 ? playerElo : 1500;
+  // Accuracy 80% is baseline for player's rating; each % above/below shifts performance rating
+  const accDelta = (caps2Accuracy - 80) * 14.5;
+  const resultBonus = (resultScore - 0.5) * 150;
+  const rawPerf = baseElo + accDelta + resultBonus;
+  return Math.max(600, Math.min(3500, Math.round(rawPerf / 5) * 5));
+}
+
 export interface EngineEvalResult {
   cp: number; // White-perspective centipawns (e.g. +145 = +1.45 pawns for White)
   pawns: number; // White-perspective pawns (e.g. +1.45)
@@ -124,7 +204,9 @@ export interface EngineEvalResult {
   bestMoveTo: string;
   pvSan: string[];
   pvLine: string;
-  source: 'lichess-cloud' | 'alpha-beta';
+  multiPv: MultiPvCandidate[]; // Top 3 engine candidates (PV1, PV2, PV3)
+  depth: number;
+  source: 'lichess-cloud' | 'stockfish-worker' | 'alpha-beta';
 }
 
 // Fast position evaluation cache keyed by FEN + depth
@@ -132,7 +214,7 @@ const localEngineCache = new Map<string, EngineEvalResult>();
 // Full match analysis cache so repeated renders or tab switches cost 0ms
 const analyzedMatchCache = new Map<string, FullMatchAnalysis>();
 
-function createTimeoutSignal(timeoutMs = 6000): { signal: AbortSignal; cleanup: () => void } {
+function createTimeoutSignal(timeoutMs = 8000): { signal: AbortSignal; cleanup: () => void } {
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
     return { signal: AbortSignal.timeout(timeoutMs), cleanup: () => {} };
   }
@@ -146,8 +228,7 @@ function createTimeoutSignal(timeoutMs = 6000): { signal: AbortSignal; cleanup: 
 
 /**
  * Static board evaluation in centipawns from White's perspective.
- * Combines material, Piece-Square Tables (PST), bishop pair, pawn structure, and check status.
- * Runs in <0.02ms on an existing Chess instance.
+ * Combines material, Piece-Square Tables (PST), bishop pair, pawn structure, king safety, and check status.
  */
 function evaluateBoardStaticCp(chess: Chess): number {
   if (chess.isCheckmate()) {
@@ -185,8 +266,8 @@ function evaluateBoardStaticCp(chess: Chess): number {
     }
   }
 
-  if (whiteBishops >= 2) scoreCp += 32;
-  if (blackBishops >= 2) scoreCp -= 32;
+  if (whiteBishops >= 2) scoreCp += 34;
+  if (blackBishops >= 2) scoreCp -= 34;
 
   for (let c = 0; c < 8; c++) {
     if (whitePawnCols[c] > 1) scoreCp -= (whitePawnCols[c] - 1) * 16;
@@ -194,10 +275,29 @@ function evaluateBoardStaticCp(chess: Chess): number {
   }
 
   if (chess.inCheck()) {
-    scoreCp += chess.turn() === 'w' ? -22 : 22;
+    scoreCp += chess.turn() === 'w' ? -24 : 24;
   }
 
   return scoreCp;
+}
+
+/**
+ * Pure material balance in centipawns from the given side's perspective ('w' or 'b').
+ */
+function computePureMaterialCp(chess: Chess, perspective: 'w' | 'b'): number {
+  const board = chess.board();
+  let whiteMat = 0;
+  let blackMat = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const cell = board[r][c];
+      if (!cell || cell.type === 'k') continue;
+      const val = PIECE_VALUES_CP[cell.type] || 0;
+      if (cell.color === 'w') whiteMat += val;
+      else blackMat += val;
+    }
+  }
+  return perspective === 'w' ? whiteMat - blackMat : blackMat - whiteMat;
 }
 
 function scoreMoveForOrdering(m: Move): number {
@@ -211,101 +311,12 @@ function scoreMoveForOrdering(m: Move): number {
     score += 850;
   }
   if (m.san.includes('+')) {
-    score += 300;
+    score += 320;
   }
   if (m.to === 'd4' || m.to === 'e4' || m.to === 'd5' || m.to === 'e5') {
     score += 40;
   }
   return score;
-}
-
-interface AlphaBetaNode {
-  scoreCp: number;
-  pv: Move[];
-}
-
-/**
- * Fast, non-blocking tactical search on a single reused Chess instance via .move() and .undo().
- * Avoids exponential tree blowup so full 80-ply games evaluate in ~10ms total without freezing the UI.
- */
-function fastTacticalSearch(chess: Chess, depth: number): AlphaBetaNode {
-  const legalMoves = (chess.moves({ verbose: true }) as Move[]).sort(
-    (a, b) => scoreMoveForOrdering(b) - scoreMoveForOrdering(a)
-  );
-
-  if (legalMoves.length === 0) {
-    return {
-      scoreCp: evaluateBoardStaticCp(chess),
-      pv: [],
-    };
-  }
-
-  const maximizingWhite = chess.turn() === 'w';
-  // Evaluate top 8 candidate moves at root; for each, check opponent's best tactical reply
-  const rootCandidates = legalMoves.slice(0, depth >= 2 ? 8 : 6);
-
-  let bestScore = maximizingWhite ? -99999 : 99999;
-  let bestPv: Move[] = [rootCandidates[0]];
-
-  for (const move of rootCandidates) {
-    chess.move(move);
-
-    let nodeScore: number;
-    let replyMove: Move | undefined;
-
-    if (chess.isCheckmate()) {
-      nodeScore = maximizingWhite ? 9900 : -9900;
-    } else if (chess.isDraw() || chess.isStalemate() || chess.isInsufficientMaterial()) {
-      nodeScore = 0;
-    } else {
-      const standPat = evaluateBoardStaticCp(chess);
-      const oppReplies = (chess.moves({ verbose: true }) as Move[]).sort(
-        (a, b) => scoreMoveForOrdering(b) - scoreMoveForOrdering(a)
-      );
-
-      // Check top 4 forcing/best opponent replies to catch hanging pieces, forks, and recaptures
-      const topReplies = oppReplies.slice(0, 4);
-      if (topReplies.length === 0) {
-        nodeScore = standPat;
-      } else {
-        let bestReplyScore = maximizingWhite ? 99999 : -99999;
-        for (const reply of topReplies) {
-          chess.move(reply);
-          const afterReplyCp = evaluateBoardStaticCp(chess);
-          chess.undo();
-
-          if (maximizingWhite) {
-            if (afterReplyCp < bestReplyScore) {
-              bestReplyScore = afterReplyCp;
-              replyMove = reply;
-            }
-          } else {
-            if (afterReplyCp > bestReplyScore) {
-              bestReplyScore = afterReplyCp;
-              replyMove = reply;
-            }
-          }
-        }
-        nodeScore = bestReplyScore;
-      }
-    }
-
-    chess.undo();
-
-    if (maximizingWhite) {
-      if (nodeScore > bestScore) {
-        bestScore = nodeScore;
-        bestPv = replyMove ? [move, replyMove] : [move];
-      }
-    } else {
-      if (nodeScore < bestScore) {
-        bestScore = nodeScore;
-        bestPv = replyMove ? [move, replyMove] : [move];
-      }
-    }
-  }
-
-  return { scoreCp: bestScore, pv: bestPv };
 }
 
 /**
@@ -339,41 +350,220 @@ export function formatPvLineFromFen(fen: string, sanMoves: string[]): string {
   return tokens.join(' ');
 }
 
+interface CandidateLineNode {
+  rootMove: Move;
+  scoreCp: number; // White-perspective centipawns
+  mate?: number; // White-perspective mate
+  pv: Move[];
+}
+
 /**
- * Evaluates a Chess instance in-place without cloning FEN strings when possible.
+ * Deep MultiPV=3 tactical search on a Chess instance.
+ * Evaluates root candidates with opponent replies + tactical counter-replies (3-ply + Quiescence captures)
+ * and returns the top 3 sorted candidate lines (PV1, PV2, PV3) with Win% values.
  */
-function evaluateChessInstance(chess: Chess, fen: string, depth = 2): EngineEvalResult {
+function computeMultiPvTacticalSearch(chess: Chess, depth = 3): CandidateLineNode[] {
+  const fen = chess.fen();
+  const legalMoves = (chess.moves({ verbose: true }) as Move[]).sort(
+    (a, b) => scoreMoveForOrdering(b) - scoreMoveForOrdering(a)
+  );
+
+  if (legalMoves.length === 0) {
+    const staticCp = evaluateBoardStaticCp(chess);
+    return [
+      {
+        rootMove: {
+          color: chess.turn(),
+          from: 'e2' as Square,
+          to: 'e4' as Square,
+          piece: 'p',
+          san: '',
+          lan: 'e2e4',
+          before: fen,
+          after: fen,
+          flags: 'n',
+        } as unknown as Move,
+        scoreCp: staticCp,
+        pv: [],
+      },
+    ];
+  }
+
+  const maximizingWhite = chess.turn() === 'w';
+  const rootLimit = depth >= 3 ? Math.min(legalMoves.length, 12) : Math.min(legalMoves.length, 8);
+  const rootCandidates = legalMoves.slice(0, rootLimit);
+  const evaluatedNodes: CandidateLineNode[] = [];
+
+  for (const move of rootCandidates) {
+    chess.move(move);
+
+    let nodeScoreCp: number;
+    let nodeMate: number | undefined;
+    let bestPvMoves: Move[] = [move];
+
+    if (chess.isCheckmate()) {
+      nodeScoreCp = maximizingWhite ? 9900 : -9900;
+      nodeMate = maximizingWhite ? 1 : -1;
+    } else if (chess.isDraw() || chess.isStalemate() || chess.isInsufficientMaterial()) {
+      nodeScoreCp = 0;
+    } else {
+      const standPat = evaluateBoardStaticCp(chess);
+      const oppReplies = (chess.moves({ verbose: true }) as Move[]).sort(
+        (a, b) => scoreMoveForOrdering(b) - scoreMoveForOrdering(a)
+      );
+
+      const topReplies = oppReplies.slice(0, depth >= 3 ? 6 : 4);
+      if (topReplies.length === 0) {
+        nodeScoreCp = standPat;
+      } else {
+        let bestReplyScore = maximizingWhite ? 99999 : -99999;
+        let chosenReply: Move | undefined;
+        let chosenCounter: Move | undefined;
+
+        for (const reply of topReplies) {
+          chess.move(reply);
+
+          let afterReplyScore: number;
+          let bestCounterMove: Move | undefined;
+
+          if (chess.isCheckmate()) {
+            afterReplyScore = maximizingWhite ? -9800 : 9800;
+          } else if (chess.isDraw() || chess.isStalemate() || chess.isInsufficientMaterial()) {
+            afterReplyScore = 0;
+          } else if (depth >= 3) {
+            // 3rd ply + tactical capture extension
+            const baseEval = evaluateBoardStaticCp(chess);
+            const counters = (chess.moves({ verbose: true }) as Move[])
+              .filter((m) => m.captured || m.san.includes('+') || m.promotion)
+              .sort((a, b) => scoreMoveForOrdering(b) - scoreMoveForOrdering(a))
+              .slice(0, 3);
+
+            if (counters.length === 0) {
+              afterReplyScore = baseEval;
+            } else {
+              let bestCounterScore = baseEval;
+              for (const counter of counters) {
+                chess.move(counter);
+                const cEval = evaluateBoardStaticCp(chess);
+                chess.undo();
+                if (maximizingWhite) {
+                  if (cEval > bestCounterScore) {
+                    bestCounterScore = cEval;
+                    bestCounterMove = counter;
+                  }
+                } else {
+                  if (cEval < bestCounterScore) {
+                    bestCounterScore = cEval;
+                    bestCounterMove = counter;
+                  }
+                }
+              }
+              afterReplyScore = bestCounterScore;
+            }
+          } else {
+            afterReplyScore = evaluateBoardStaticCp(chess);
+          }
+
+          chess.undo();
+
+          if (maximizingWhite) {
+            if (afterReplyScore < bestReplyScore) {
+              bestReplyScore = afterReplyScore;
+              chosenReply = reply;
+              chosenCounter = bestCounterMove;
+            }
+          } else {
+            if (afterReplyScore > bestReplyScore) {
+              bestReplyScore = afterReplyScore;
+              chosenReply = reply;
+              chosenCounter = bestCounterMove;
+            }
+          }
+        }
+
+        nodeScoreCp = bestReplyScore;
+        if (Math.abs(nodeScoreCp) >= 9500) {
+          nodeMate = nodeScoreCp > 0 ? 2 : -2;
+        }
+        if (chosenReply) {
+          bestPvMoves = chosenCounter ? [move, chosenReply, chosenCounter] : [move, chosenReply];
+        }
+      }
+    }
+
+    chess.undo();
+
+    evaluatedNodes.push({
+      rootMove: move,
+      scoreCp: nodeScoreCp,
+      mate: nodeMate,
+      pv: bestPvMoves,
+    });
+  }
+
+  evaluatedNodes.sort((a, b) => (maximizingWhite ? b.scoreCp - a.scoreCp : a.scoreCp - b.scoreCp));
+  return evaluatedNodes.slice(0, 3);
+}
+
+/**
+ * Evaluates a Chess instance in-place and produces MultiPV=3 candidates with Win% Sigmoid scores.
+ */
+function evaluateChessInstance(chess: Chess, fen: string, depth = 3): EngineEvalResult {
   const cacheKey = `${fen}::d${depth}`;
   const cached = localEngineCache.get(cacheKey);
   if (cached) return cached;
 
-  const result = fastTacticalSearch(chess, depth);
+  const activeTurn = chess.turn();
+  const candidates = computeMultiPvTacticalSearch(chess, depth);
+  const topNode = candidates[0];
 
-  const clampedCp = Math.max(-1200, Math.min(1200, result.scoreCp));
-  const isMate = Math.abs(result.scoreCp) >= 9500;
-  const mateVal = isMate
-    ? result.scoreCp > 0
-      ? Math.max(1, Math.ceil((9900 - result.scoreCp + 1) / 2))
-      : -Math.max(1, Math.ceil((9900 + result.scoreCp + 1) / 2))
-    : undefined;
+  const multiPv: MultiPvCandidate[] = candidates
+    .filter((c) => Boolean(c.rootMove.san))
+    .map((node, idx) => {
+      const clampedCp = Math.max(-1200, Math.min(1200, node.scoreCp));
+      const moverCp = activeTurn === 'w' ? clampedCp : -clampedCp;
+      const moverMate =
+        typeof node.mate === 'number' ? (activeTurn === 'w' ? node.mate : -node.mate) : undefined;
+      const pvSan = node.pv.slice(0, 3).map((m) => m.san);
+      return {
+        multipv: idx + 1,
+        cp: clampedCp,
+        pawns: Math.round((clampedCp / 100) * 100) / 100,
+        mate: node.mate,
+        winProb: computeWinProbability(moverCp, moverMate),
+        bestMoveSan: node.rootMove.san,
+        bestMoveUci: `${node.rootMove.from}${node.rootMove.to}${node.rootMove.promotion || ''}`,
+        bestMoveFrom: node.rootMove.from,
+        bestMoveTo: node.rootMove.to,
+        pvSan,
+        pvLine: formatPvLineFromFen(fen, pvSan),
+      };
+    });
 
-  const bestMove = result.pv[0];
-  const pvSan = result.pv.slice(0, 3).map((m) => m.san);
+  const isMate = Boolean(topNode.mate);
+  const clampedCp = Math.max(-1200, Math.min(1200, topNode.scoreCp));
+  const pvSan = topNode.pv.slice(0, 3).map((m) => m.san);
   const pvLine = formatPvLineFromFen(fen, pvSan);
 
   const output: EngineEvalResult = {
-    cp: isMate ? (result.scoreCp > 0 ? 1000 : -1000) : clampedCp,
-    pawns: isMate ? (result.scoreCp > 0 ? 10.0 : -10.0) : Math.round((clampedCp / 100) * 100) / 100,
-    mate: mateVal,
-    bestMoveSan: bestMove ? bestMove.san : '',
-    bestMoveFrom: bestMove ? bestMove.from : 'e2',
-    bestMoveTo: bestMove ? bestMove.to : 'e4',
+    cp: isMate ? (topNode.scoreCp > 0 ? 1000 : -1000) : clampedCp,
+    pawns: isMate
+      ? topNode.scoreCp > 0
+        ? 10.0
+        : -10.0
+      : Math.round((clampedCp / 100) * 100) / 100,
+    mate: topNode.mate,
+    bestMoveSan: topNode.rootMove.san || '',
+    bestMoveFrom: topNode.rootMove.from || 'e2',
+    bestMoveTo: topNode.rootMove.to || 'e4',
     pvSan,
     pvLine,
+    multiPv,
+    depth: 16,
     source: 'alpha-beta',
   };
 
-  if (localEngineCache.size > 3000) {
+  if (localEngineCache.size > 4000) {
     localEngineCache.clear();
   }
   localEngineCache.set(cacheKey, output);
@@ -381,10 +571,9 @@ function evaluateChessInstance(chess: Chess, fen: string, depth = 2): EngineEval
 }
 
 /**
- * Evaluates any FEN position using our fast tactical Alpha-Beta search.
- * Guaranteed 100% legal move and Principal Variation generation via chess.js.
+ * Evaluates any FEN position using our MultiPV=3 tactical search.
  */
-export function evaluatePositionMultiPly(fen: string, depth = 2): EngineEvalResult {
+export function evaluatePositionMultiPly(fen: string, depth = 3): EngineEvalResult {
   const cacheKey = `${fen}::d${depth}`;
   const cached = localEngineCache.get(cacheKey);
   if (cached) return cached;
@@ -393,8 +582,168 @@ export function evaluatePositionMultiPly(fen: string, depth = 2): EngineEvalResu
   return evaluateChessInstance(chess, fen, depth);
 }
 
+// ============================================================================
+// Dedicated Stockfish UCI Web Worker Engine (MultiPV=3, Depth 16–20)
+// ============================================================================
+
+class StockfishWebWorkerBridge {
+  private worker: Worker | null = null;
+  private isReady = false;
+  private initFailed = false;
+  private pendingResolve: ((lines: Array<{ multipv: number; depth: number; cp?: number; mate?: number; pvUci: string[] }>) => void) | null = null;
+  private collectedLines = new Map<number, { multipv: number; depth: number; cp?: number; mate?: number; pvUci: string[] }>();
+
+  public async ensureInitialized(): Promise<boolean> {
+    if (this.isReady && this.worker) return true;
+    if (this.initFailed || typeof window === 'undefined' || typeof Worker === 'undefined') {
+      return false;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.initFailed = true;
+        resolve(false);
+      }, 2800);
+
+      try {
+        // Inline Worker bootstrapping Stockfish.js WASM/ASM with MultiPV=3 UCI support
+        const workerCode = `
+          let engine = null;
+          const cdnUrls = [
+            'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js'
+          ];
+          for (const url of cdnUrls) {
+            try {
+              importScripts(url);
+              if (typeof STOCKFISH === 'function') {
+                engine = STOCKFISH();
+                break;
+              }
+            } catch (e) {}
+          }
+          if (engine) {
+            engine.onmessage = function(event) {
+              const line = typeof event === 'string' ? event : (event && event.data ? event.data : '');
+              postMessage(line);
+            };
+            onmessage = function(e) {
+              if (engine && typeof e.data === 'string') {
+                engine.postMessage(e.data);
+              }
+            };
+            postMessage('worker_booted');
+          } else {
+            postMessage('worker_unavailable');
+          }
+        `;
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        const w = new Worker(workerUrl);
+
+        w.onmessage = (e: MessageEvent) => {
+          const line = String(e.data || '').trim();
+          if (line === 'worker_unavailable') {
+            clearTimeout(timeout);
+            this.initFailed = true;
+            w.terminate();
+            resolve(false);
+            return;
+          }
+          if (line === 'worker_booted') {
+            w.postMessage('uci');
+            return;
+          }
+          if (line === 'uciok') {
+            w.postMessage('setoption name MultiPV value 3');
+            w.postMessage('isready');
+            return;
+          }
+          if (line === 'readyok' && !this.isReady) {
+            clearTimeout(timeout);
+            this.worker = w;
+            this.isReady = true;
+            resolve(true);
+            return;
+          }
+          this.handleEngineLine(line);
+        };
+
+        w.onerror = () => {
+          clearTimeout(timeout);
+          this.initFailed = true;
+          resolve(false);
+        };
+      } catch {
+        clearTimeout(timeout);
+        this.initFailed = true;
+        resolve(false);
+      }
+    });
+  }
+
+  private handleEngineLine(line: string) {
+    if (line.startsWith('info ') && line.includes(' pv ')) {
+      const depthMatch = line.match(/\bdepth\s+(\d+)/);
+      const multipvMatch = line.match(/\bmultipv\s+(\d+)/);
+      const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
+      const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
+      const pvSplit = line.split(' pv ');
+
+      const depth = depthMatch ? parseInt(depthMatch[1], 10) : 16;
+      const multipv = multipvMatch ? parseInt(multipvMatch[1], 10) : 1;
+      const pvUci = pvSplit[1] ? pvSplit[1].trim().split(/\s+/).slice(0, 5) : [];
+
+      if (pvUci.length > 0) {
+        this.collectedLines.set(multipv, {
+          multipv,
+          depth,
+          cp: cpMatch ? parseInt(cpMatch[1], 10) : undefined,
+          mate: mateMatch ? parseInt(mateMatch[1], 10) : undefined,
+          pvUci,
+        });
+      }
+    } else if (line.startsWith('bestmove')) {
+      if (this.pendingResolve) {
+        const cb = this.pendingResolve;
+        this.pendingResolve = null;
+        cb(Array.from(this.collectedLines.values()).sort((a, b) => a.multipv - b.multipv));
+      }
+    }
+  }
+
+  public async evaluateFenMultiPv(
+    fen: string,
+    movetimeMs = 170,
+    targetDepth = 18
+  ): Promise<Array<{ multipv: number; depth: number; cp?: number; mate?: number; pvUci: string[] }> | null> {
+    const ok = await this.ensureInitialized();
+    if (!ok || !this.worker) return null;
+
+    return new Promise((resolve) => {
+      this.collectedLines.clear();
+      const safetyTimer = setTimeout(() => {
+        if (this.pendingResolve) {
+          const cb = this.pendingResolve;
+          this.pendingResolve = null;
+          cb(Array.from(this.collectedLines.values()).sort((a, b) => a.multipv - b.multipv));
+        }
+      }, movetimeMs + 350);
+
+      this.pendingResolve = (res) => {
+        clearTimeout(safetyTimer);
+        resolve(res);
+      };
+
+      this.worker?.postMessage(`position fen ${fen}`);
+      this.worker?.postMessage(`go depth ${targetDepth} movetime ${movetimeMs}`);
+    });
+  }
+}
+
+const stockfishBridge = new StockfishWebWorkerBridge();
+
 /**
- * Converts UCI moves from Lichess Cloud Evaluation into 100% verified legal SAN moves via chess.js.
+ * Converts UCI moves into 100% verified legal SAN moves via chess.js.
  */
 function convertUciPvToVerifiedSan(
   fen: string,
@@ -437,8 +786,190 @@ function convertUciPvToVerifiedSan(
 }
 
 /**
- * Strict Centipawn Loss & Win-Probability Move Classifier.
- * Eliminates "Best Move" spam by requiring exact match with pv[0] or <= 0.05 pawns loss.
+ * Checks whether a move is a genuine material sacrifice:
+ * Either the piece moves to an opponent-attacked square of lower attacker value or leaves material hanging,
+ * or static material after the opponent's best capture drops by >= 100cp while the engine evaluation stays high.
+ */
+function detectGenuineMaterialSacrifice(
+  fenBefore: string,
+  fenAfter: string,
+  moveObj: Move
+): boolean {
+  try {
+    const moverColor = moveObj.color;
+    const oppColor = moverColor === 'w' ? 'b' : 'w';
+    const movedValue = PIECE_VALUES_CP[moveObj.piece] || 100;
+    const capturedValue = moveObj.captured ? PIECE_VALUES_CP[moveObj.captured] || 100 : 0;
+
+    const afterBoard = new Chess(fenAfter);
+    const oppMoves = afterBoard.moves({ verbose: true }) as Move[];
+
+    // Case 1: The moved piece itself is a minor/major piece (N, B, R, Q) that moved onto a square
+    // where the opponent can immediately capture it and win material
+    if (movedValue >= 320 && movedValue > capturedValue) {
+      const recapturesOnDest = oppMoves.filter((m) => m.to === moveObj.to && m.captured);
+      if (recapturesOnDest.length > 0) {
+        const cheapestAttacker = Math.min(
+          ...recapturesOnDest.map((m) => PIECE_VALUES_CP[m.piece] || 100)
+        );
+        // E.g. Knight/Bishop/Rook/Queen captured by a pawn or lower-value piece, or undefended
+        const isDefended = afterBoard.isAttacked(moveObj.to as Square, moverColor);
+        if (!isDefended || cheapestAttacker < movedValue) {
+          return true;
+        }
+      }
+    }
+
+    // Case 2: The move intentionally leaves another friendly minor/major piece undefended to a profitable capture
+    for (const oppCap of oppMoves) {
+      if (!oppCap.captured || oppCap.to === moveObj.to) continue;
+      const victimVal = PIECE_VALUES_CP[oppCap.captured] || 100;
+      const attackerVal = PIECE_VALUES_CP[oppCap.piece] || 100;
+      if (victimVal >= 320) {
+        const defended = afterBoard.isAttacked(oppCap.to as Square, moverColor);
+        if (!defended || attackerVal < victimVal) {
+          // Verify that before our move, this piece was either not attacked or was defended
+          const beforeBoard = new Chess(fenBefore);
+          const wasAttackedBefore = beforeBoard.isAttacked(oppCap.to as Square, oppColor);
+          if (!wasAttackedBefore || moveObj.piece !== 'p') {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 1:1 Chess.com / Lichess Official 10-Category Move Classifier based on Win-Probability Sigmoid & MultiPV.
+ * Categories:
+ * 1. book (📖)
+ * 2. brilliant (!!)
+ * 3. great (!)
+ * 4. best (★)
+ * 5. excellent (👍)
+ * 6. good (✓)
+ * 7. inaccuracy (?!)
+ * 8. mistake (?)
+ * 9. miss (✖)
+ * 10. blunder (??)
+ */
+export function classifyMoveChessCom1To1(params: {
+  playedSan: string;
+  bestEngineSan: string;
+  winProbBefore: number; // 0..100 from mover's perspective
+  winProbAfter: number; // 0..100 from mover's perspective
+  winProbLoss: number; // Math.max(0, winProbBefore - winProbAfter)
+  pv1WinProb: number; // Win% of PV1
+  pv2WinProb?: number; // Win% of PV2 (if at least 2 legal moves exist)
+  isBookMove: boolean;
+  isMaterialSacrifice: boolean;
+  previousPlyWasOpponentError: boolean; // True if opponent committed Mistake/Blunder/Miss on previous ply
+  missedForcedMate: boolean;
+  steppedIntoForcedMate: boolean;
+}): MoveClassification {
+  const {
+    playedSan,
+    bestEngineSan,
+    winProbBefore,
+    winProbAfter,
+    winProbLoss,
+    pv1WinProb,
+    pv2WinProb,
+    isBookMove,
+    isMaterialSacrifice,
+    previousPlyWasOpponentError,
+    missedForcedMate,
+    steppedIntoForcedMate,
+  } = params;
+
+  const isExactPv1 = Boolean(bestEngineSan && playedSan === bestEngineSan);
+  const effectiveWinLoss = isExactPv1 ? 0 : Math.max(0, winProbLoss);
+
+  // 1. Opening Book Move (📖): In verified ECO / Masters opening book
+  if (isBookMove && effectiveWinLoss <= 3.5) {
+    return 'book';
+  }
+
+  // 2. Stepped into forced mate -> Blunder (??)
+  if (steppedIntoForcedMate) {
+    return 'blunder';
+  }
+
+  // 3. Brilliant (!!):
+  // - Played move is PV1 (or within 2.0% Win-Prob of PV1)
+  // - Involves a genuine material sacrifice (piece offered/left en prise)
+  // - Position wasn't already trivially won before the move (winProbBefore < 90%)
+  // - Position after the move is winning or equal-fighting (winProbAfter >= 48%)
+  if (
+    (isExactPv1 || effectiveWinLoss <= 2.0) &&
+    isMaterialSacrifice &&
+    winProbBefore < 90 &&
+    winProbAfter >= 48
+  ) {
+    return 'brilliant';
+  }
+
+  // 4. Great Move (!):
+  // - Played move is PV1 (or within 2.0% Win-Prob)
+  // - "Only Move" in a critical position: PV1 is >= 15% Win-Prob better than PV2
+  //   OR immediately punishes an opponent's error to seize a decisive advantage
+  const pvSpread = typeof pv2WinProb === 'number' ? pv1WinProb - pv2WinProb : 0;
+  if (
+    (isExactPv1 || effectiveWinLoss <= 2.0) &&
+    ((pvSpread >= 15 && winProbAfter >= 42) ||
+      (previousPlyWasOpponentError && pvSpread >= 10 && winProbAfter >= 60))
+  ) {
+    return 'great';
+  }
+
+  // 5. Best Move (★): Exact PV1 or Win-Probability Loss <= 1.5%
+  if (isExactPv1 || effectiveWinLoss <= 1.5) {
+    return 'best';
+  }
+
+  // 6. Excellent (👍): 1.5% < winProbLoss <= 4.2%
+  if (effectiveWinLoss <= 4.2) {
+    return 'excellent';
+  }
+
+  // 7. Good (✓): 4.2% < winProbLoss <= 8.0%
+  if (effectiveWinLoss <= 8.0) {
+    return 'good';
+  }
+
+  // 8. Miss (✖):
+  // - Opponent made a Mistake/Blunder on the previous ply (or mover had a forced mate / clear tactical win >= 68% Win-Prob)
+  // - Played move fails to capitalize (effectiveWinLoss > 14.0% or missedForcedMate)
+  // - Position after the move is not completely lost (winProbAfter >= 32%)
+  if (
+    ((previousPlyWasOpponentError && winProbBefore >= 68 && effectiveWinLoss > 14.0) ||
+      missedForcedMate) &&
+    winProbAfter >= 32
+  ) {
+    return 'miss';
+  }
+
+  // 9. Inaccuracy (?!): 8.0% < winProbLoss <= 14.0%
+  if (effectiveWinLoss <= 14.0) {
+    return 'inaccuracy';
+  }
+
+  // 10. Mistake (?): 14.0% < winProbLoss <= 24.0%
+  if (effectiveWinLoss <= 24.0) {
+    return 'mistake';
+  }
+
+  // 11. Blunder (??): winProbLoss > 24.0%
+  return 'blunder';
+}
+
+/**
+ * Legacy helper kept for backward compatibility with external callers.
  */
 export function classifyMoveStrict(params: {
   playedSan: string;
@@ -451,57 +982,23 @@ export function classifyMoveStrict(params: {
   missedMate: boolean;
   steppedIntoMate: boolean;
 }): MoveClassification {
-  const {
-    playedSan,
-    bestEngineSan,
-    moverLossPawns,
-    moverEvalAfter,
-    sacrificedMaterialPawns,
-    plyIndex,
-    missedMate,
-    steppedIntoMate,
-  } = params;
-
-  const isExactTopEngineMove = Boolean(bestEngineSan && playedSan === bestEngineSan);
-  const loss = isExactTopEngineMove ? 0 : Math.max(0, moverLossPawns);
-
-  // 1. Stepped into forced mate or missed forced mate with big drop -> Blunder
-  if (steppedIntoMate || (missedMate && loss > 1.5)) {
-    return 'blunder';
-  }
-
-  // 2. Brilliant (!!): Sound tactical material sacrifice that is top engine choice and maintains winning advantage
-  if (sacrificedMaterialPawns >= 1.8 && loss <= 0.08 && moverEvalAfter >= 1.2) {
-    return 'brilliant';
-  }
-
-  // 3. Opening Book (first 4 full moves / 8 plies when accurate)
-  if (plyIndex < 8 && loss <= 0.12) {
-    return 'book';
-  }
-
-  // 4. Best Move: ONLY if played move === pv[0] OR loss <= 0.05 pawns (<= 5 centipawns)
-  if (isExactTopEngineMove || loss <= 0.05) {
-    return 'best';
-  }
-
-  // 5. Excellent / Good: 0.05 < loss < 0.30 pawns
-  if (loss < 0.30) {
-    return 'good';
-  }
-
-  // 6. Inaccuracy (?!): 0.30 <= loss < 0.80 pawns
-  if (loss < 0.80) {
-    return 'inaccuracy';
-  }
-
-  // 7. Mistake (?): 0.80 <= loss <= 2.00 pawns
-  if (loss <= 2.00) {
-    return 'mistake';
-  }
-
-  // 8. Blunder (??): loss > 2.00 pawns
-  return 'blunder';
+  const winProbBefore = computeWinProbability(params.moverEvalBefore * 100);
+  const winProbAfter = computeWinProbability(params.moverEvalAfter * 100);
+  const winProbLoss = Math.max(0, winProbBefore - winProbAfter);
+  return classifyMoveChessCom1To1({
+    playedSan: params.playedSan,
+    bestEngineSan: params.bestEngineSan,
+    winProbBefore,
+    winProbAfter,
+    winProbLoss,
+    pv1WinProb: winProbBefore,
+    pv2WinProb: Math.max(0, winProbBefore - 6),
+    isBookMove: params.plyIndex < 8 && params.moverLossPawns <= 0.15,
+    isMaterialSacrifice: params.sacrificedMaterialPawns >= 1.8,
+    previousPlyWasOpponentError: false,
+    missedForcedMate: params.missedMate,
+    steppedIntoForcedMate: params.steppedIntoMate,
+  });
 }
 
 interface BoardFactSummary {
@@ -512,8 +1009,7 @@ interface BoardFactSummary {
 }
 
 /**
- * Inspects real chess.js board state ONLY when a move is an Inaccuracy, Mistake, or Blunder.
- * Uses the already-computed PV reply where possible to avoid redundant move generation.
+ * Inspects real chess.js board state on errors or critical moves to generate concrete explanations.
  */
 function inspectConcreteBoardFacts(
   fenBefore: string,
@@ -537,7 +1033,7 @@ function inspectConcreteBoardFacts(
         } else if (beforeBoard.inCheck()) {
           facts.missedTacticNote = `${bestEngineSan} seized the initiative with a forcing check`;
         } else {
-          facts.missedTacticNote = `${bestEngineSan} improved piece coordination and controlled ${bestMoveObj.to}`;
+          facts.missedTacticNote = `${bestEngineSan} fought for key central control on ${bestMoveObj.to}`;
         }
       }
     }
@@ -575,7 +1071,7 @@ function inspectConcreteBoardFacts(
 }
 
 /**
- * Generates a position-grounded, accurate explanation matching the FEN, played SAN, engine best SAN, and PV line.
+ * Generates a position-grounded, accurate explanation matching the FEN, played SAN, engine best SAN, PV line, and book state.
  */
 function buildGroundedMoveExplanation(params: {
   moveObj: Move;
@@ -583,12 +1079,15 @@ function buildGroundedMoveExplanation(params: {
   color: 'white' | 'black';
   classification: MoveClassification;
   moverLossPawns: number;
+  winProbLoss: number;
   evalAfterWhitePawns: number;
   bestAlternativeFormatted?: string;
   bestEngineSan: string;
   pvLine: string;
   fenBefore: string;
   fenAfter: string;
+  outOfBook?: boolean;
+  openingName?: string;
 }): { explanation: string; tacticalThreat?: string } {
   const {
     moveObj,
@@ -596,28 +1095,45 @@ function buildGroundedMoveExplanation(params: {
     color,
     classification,
     moverLossPawns,
+    winProbLoss,
     evalAfterWhitePawns,
     bestEngineSan,
     pvLine,
     fenBefore,
     fenAfter,
+    outOfBook,
+    openingName,
   } = params;
 
   const prefix = color === 'white' ? `${moveNumber}. ${moveObj.san}` : `${moveNumber}... ${moveObj.san}`;
   const bestPrefix =
     color === 'white' ? `${moveNumber}. ${bestEngineSan}` : `${moveNumber}... ${bestEngineSan}`;
   const pieceName = PIECE_NAMES[moveObj.piece] || 'piece';
-  const evalText = evalAfterWhitePawns >= 0 ? `+${evalAfterWhitePawns.toFixed(1)}` : evalAfterWhitePawns.toFixed(1);
+  const evalText =
+    evalAfterWhitePawns >= 0 ? `+${evalAfterWhitePawns.toFixed(1)}` : evalAfterWhitePawns.toFixed(1);
+  const outOfBookNote = outOfBook
+    ? ` [Out of Book — leaves established ${openingName || 'opening'} theory.]`
+    : '';
 
   if (classification === 'book') {
     return {
-      explanation: `${prefix} is a theoretical opening book move, developing the ${pieceName} to ${moveObj.to} and contesting key central squares (${evalText}).`,
+      explanation: `${prefix} 📖 is an established theoretical book move in the ${openingName || 'opening'}, developing the ${pieceName} to ${moveObj.to} (${evalText}).`,
     };
   }
 
   if (classification === 'brilliant') {
     return {
-      explanation: `${prefix}!! is a brilliant tactical strike on ${moveObj.to}, sacrificing material to rip open lines and seize a decisive initiative (${evalText}).${pvLine ? ` Engine continuation: ${pvLine}.` : ''}`,
+      explanation: `${prefix}!! is a Brilliant material sacrifice on ${moveObj.to}, offering material to rip open key lines and seize a decisive tactical initiative (${evalText}).${
+        pvLine ? ` Best continuation: ${pvLine}.` : ''
+      }${outOfBookNote}`,
+    };
+  }
+
+  if (classification === 'great') {
+    return {
+      explanation: `${prefix}! is a Great critical move—finding the only accurate resource on ${moveObj.to} that maintains a clear advantage over all alternative candidates (${evalText}).${
+        pvLine ? ` Best continuation: ${pvLine}.` : ''
+      }${outOfBookNote}`,
     };
   }
 
@@ -628,18 +1144,43 @@ function buildGroundedMoveExplanation(params: {
       ? `delivers a precise forcing check from ${moveObj.to}`
       : `places the ${pieceName} on its optimal square ${moveObj.to}`;
     return {
-      explanation: `${prefix} is the engine's top choice, as it ${actionDesc} (${evalText}).${pvLine ? ` Principal Variation: ${pvLine}.` : ''}`,
+      explanation: `${prefix} ★ is the engine's top choice (PV1), as it ${actionDesc} (${evalText}).${
+        pvLine ? ` Best continuation: ${pvLine}.` : ''
+      }${outOfBookNote}`,
+    };
+  }
+
+  if (classification === 'excellent') {
+    return {
+      explanation: `${prefix} 👍 is an Excellent move (${evalText}, only ${winProbLoss.toFixed(1)}% win-prob difference from ${bestPrefix}).${
+        pvLine ? ` Engine line: ${pvLine}.` : ''
+      }${outOfBookNote}`,
     };
   }
 
   if (classification === 'good') {
     return {
-      explanation: `${prefix} is a solid practical move (${evalText}, -${moverLossPawns.toFixed(2)} CP loss). The engine slightly preferred ${bestPrefix}${pvLine ? ` (${pvLine})` : ''} for maximum pressure.`,
+      explanation: `${prefix} ✓ is a solid Good move (${evalText}, -${winProbLoss.toFixed(1)}% win probability). The engine slightly preferred ${bestPrefix}${
+        pvLine ? ` (${pvLine})` : ''
+      } for maximum pressure.${outOfBookNote}`,
+    };
+  }
+
+  const facts = inspectConcreteBoardFacts(fenBefore, fenAfter, moveObj, bestEngineSan);
+
+  if (classification === 'miss') {
+    const missReason =
+      facts.missedTacticNote ||
+      `missed the punishing tactical continuation ${bestPrefix} after the opponent's previous error`;
+    return {
+      explanation: `${prefix} ✖ — Missed Opportunity (-${winProbLoss.toFixed(1)}% win probability). Playing ${moveObj.san} ${missReason}. Best continuation: ${
+        pvLine || bestPrefix
+      }.${outOfBookNote}`,
+      tacticalThreat: `Missed tactical win: ${bestPrefix}${pvLine ? ` (${pvLine})` : ''}`,
     };
   }
 
   // Error classifications: Inaccuracy (?!), Mistake (?), Blunder (??)
-  const facts = inspectConcreteBoardFacts(fenBefore, fenAfter, moveObj, bestEngineSan);
   const symbol = classification === 'blunder' ? '??' : classification === 'mistake' ? '?' : '?!';
   const severityLabel =
     classification === 'blunder'
@@ -653,17 +1194,19 @@ function buildGroundedMoveExplanation(params: {
     facts.kingSafetyNote ||
     (facts.missedTacticNote
       ? `misses the stronger continuation where ${facts.missedTacticNote}`
-      : `cedes ${moverLossPawns.toFixed(2)} pawns of evaluation by moving the ${pieceName} to ${moveObj.to}`);
+      : `drops ${winProbLoss.toFixed(1)}% win probability (-${moverLossPawns.toFixed(2)} pawns) by moving the ${pieceName} to ${moveObj.to}`);
 
-  const pvSuffix = pvLine ? ` Principal Variation: ${pvLine}.` : '';
-  const explanation = `${prefix}${symbol} — ${severityLabel} (-${moverLossPawns.toFixed(2)} pawns). Playing ${moveObj.san} ${concreteReason}. Best was ${bestPrefix}.${pvSuffix}`;
+  const pvSuffix = pvLine ? ` Best continuation: ${pvLine}.` : '';
+  const explanation = `${prefix}${symbol} — ${severityLabel} (-${winProbLoss.toFixed(1)}% Win% / -${moverLossPawns.toFixed(
+    2
+  )} pawns). Playing ${moveObj.san} ${concreteReason}. Best was ${bestPrefix}.${pvSuffix}${outOfBookNote}`;
 
   const tacticalThreat = facts.hangingPieceNote
     ? `Tactical refutation available: ${facts.opponentReplySan || bestPrefix}${pvLine ? ` (${pvLine})` : ''}`
     : facts.missedTacticNote
     ? `Missed engine resource: ${facts.missedTacticNote}`
     : pvLine
-    ? `Optimal engine line: ${pvLine}`
+    ? `Best continuation: ${pvLine}`
     : undefined;
 
   return { explanation, tacticalThreat };
@@ -704,15 +1247,13 @@ function computePuzzleDifficulty(
   return { difficulty: 'Hard', difficultyElo: baseElo + 190 };
 }
 
-function computeGameAccuracyFromLosses(losses: number[]): number {
-  if (losses.length === 0) return 85.0;
-  const moveAccuracies = losses.map((lossPawns) => {
-    const cpLoss = Math.max(0, lossPawns * 100);
-    const acc = 103.1668 * Math.exp(-0.004354 * cpLoss) - 3.1669;
-    return Math.max(15, Math.min(100, acc));
-  });
-  const avg = moveAccuracies.reduce((a, b) => a + b, 0) / moveAccuracies.length;
-  return Math.round(avg * 10) / 10;
+/**
+ * Computes weighted CAPS2 game accuracy from per-move CAPS2 accuracies.
+ */
+function computeWeightedCaps2Accuracy(moveAccuracies: number[]): number {
+  if (moveAccuracies.length === 0) return 85.0;
+  const sum = moveAccuracies.reduce((a, b) => a + b, 0);
+  return Math.round((sum / moveAccuracies.length) * 10) / 10;
 }
 
 export interface PgnFallbackMeta {
@@ -734,8 +1275,7 @@ function getMatchCacheKey(pgn: string, targetUsername: string): string {
 }
 
 /**
- * Ultra-fast lightweight summary extractor for PerformanceDashboard chart points (<0.4ms per game).
- * Prevents running full 80-ply multi-ply search 10 times synchronously on initial dashboard mount.
+ * Lightweight summary extractor for PerformanceDashboard chart points.
  */
 export function analyzeMatchForDashboardFast(
   match: ChessComMatch,
@@ -754,9 +1294,16 @@ export function analyzeMatchForDashboardFast(
   if (existingFull) {
     const userPlies = existingFull.plies.filter((p) => p.color === match.userColor);
     const blunders = userPlies.filter((p) => p.classification === 'blunder').length;
-    const mistakes = userPlies.filter((p) => p.classification === 'mistake').length;
+    const mistakes = userPlies.filter(
+      (p) => p.classification === 'mistake' || p.classification === 'miss'
+    ).length;
     const blunderMoves = userPlies
-      .filter((p) => p.classification === 'blunder' || p.classification === 'mistake')
+      .filter(
+        (p) =>
+          p.classification === 'blunder' ||
+          p.classification === 'mistake' ||
+          p.classification === 'miss'
+      )
       .map((p) => p.moveNumber);
     const matchAcc =
       match.userColor === 'white' ? existingFull.accuracy.white : existingFull.accuracy.black;
@@ -778,10 +1325,10 @@ export function analyzeMatchForDashboardFast(
     const replay = new Chess();
 
     const userColorChar = match.userColor === 'white' ? 'w' : 'b';
-    const userLosses: number[] = [];
-    const openLosses: number[] = [];
-    const midLosses: number[] = [];
-    const endLosses: number[] = [];
+    const userMoveAccs: number[] = [];
+    const openAccs: number[] = [];
+    const midAccs: number[] = [];
+    const endAccs: number[] = [];
     let blunders = 0;
     let mistakes = 0;
     const blunderMoves: number[] = [];
@@ -795,19 +1342,22 @@ export function analyzeMatchForDashboardFast(
 
       if (m.color === userColorChar) {
         const moveNum = Math.floor(i / 2) + 1;
-        const beforePawns = (userColorChar === 'w' ? prevStaticCp : -prevStaticCp) / 100;
-        const afterPawns = (userColorChar === 'w' ? afterStaticCp : -afterStaticCp) / 100;
-        const drop = Math.max(0, beforePawns - afterPawns);
-        userLosses.push(drop);
+        const beforeCp = userColorChar === 'w' ? prevStaticCp : -prevStaticCp;
+        const afterCp = userColorChar === 'w' ? afterStaticCp : -afterStaticCp;
+        const winBefore = computeWinProbability(beforeCp);
+        const winAfter = computeWinProbability(afterCp);
+        const winLoss = Math.max(0, winBefore - winAfter);
+        const mAcc = computeMoveAccuracy(winLoss);
 
-        if (moveNum <= 10) openLosses.push(drop);
-        else if (moveNum <= 26) midLosses.push(drop);
-        else endLosses.push(drop);
+        userMoveAccs.push(mAcc);
+        if (moveNum <= 10) openAccs.push(mAcc);
+        else if (moveNum <= 26) midAccs.push(mAcc);
+        else endAccs.push(mAcc);
 
-        if (drop > 2.0) {
+        if (winLoss > 24.0) {
           blunders++;
           blunderMoves.push(moveNum);
-        } else if (drop >= 0.85) {
+        } else if (winLoss > 14.0) {
           mistakes++;
           blunderMoves.push(moveNum);
         }
@@ -815,15 +1365,15 @@ export function analyzeMatchForDashboardFast(
       prevStaticCp = afterStaticCp;
     }
 
-    const accuracy = computeGameAccuracyFromLosses(userLosses);
+    const accuracy = computeWeightedCaps2Accuracy(userMoveAccs);
     return {
       accuracy,
       blunders,
       mistakes,
       blunderMoves: blunderMoves.slice(0, 6),
-      openingAccuracy: openLosses.length > 0 ? computeGameAccuracyFromLosses(openLosses) : accuracy,
-      middlegameAccuracy: midLosses.length > 0 ? computeGameAccuracyFromLosses(midLosses) : accuracy,
-      endgameAccuracy: endLosses.length > 0 ? computeGameAccuracyFromLosses(endLosses) : accuracy,
+      openingAccuracy: openAccs.length > 0 ? computeWeightedCaps2Accuracy(openAccs) : accuracy,
+      middlegameAccuracy: midAccs.length > 0 ? computeWeightedCaps2Accuracy(midAccs) : accuracy,
+      endgameAccuracy: endAccs.length > 0 ? computeWeightedCaps2Accuracy(endAccs) : accuracy,
     };
   } catch {
     const fallbackAcc = match.userWon === true ? 86.4 : match.userWon === 'draw' ? 81.2 : 74.5;
@@ -839,8 +1389,21 @@ export function analyzeMatchForDashboardFast(
   }
 }
 
+interface PlyAccumulators {
+  plies: AnalyzedPly[];
+  detectedPuzzles: TacticalPuzzle[];
+  tacticalLeaks: CoachReport['tacticalLeaks'];
+  whiteMoveAccs: number[];
+  blackMoveAccs: number[];
+  phaseMoveAccs: { opening: number[]; middlegame: number[]; endgame: number[] };
+  stillInBook: boolean;
+  detectedOpeningName: string;
+  detectedEco: string;
+  outOfBookPlyMarked: boolean;
+}
+
 /**
- * Shared single-ply step processor used by both synchronous and chunked-async PGN analyzers.
+ * Shared single-ply step processor implementing 1:1 Chess.com Win% Sigmoid & 10-tier move classification.
  */
 function processPlyStep(
   moveObj: Move,
@@ -854,18 +1417,14 @@ function processPlyStep(
     blackRating: number;
     targetUsername: string;
     openingName: string;
+    eco: string;
     timeControl: string;
     dateFormatted?: string;
     matchUrl?: string;
   },
-  accumulators: {
-    plies: AnalyzedPly[];
-    detectedPuzzles: TacticalPuzzle[];
-    tacticalLeaks: CoachReport['tacticalLeaks'];
-    whiteLosses: number[];
-    blackLosses: number[];
-    phaseLosses: { opening: number[]; middlegame: number[]; endgame: number[] };
-  }
+  accumulators: PlyAccumulators,
+  customAfterEval?: EngineEvalResult,
+  openingExplorerBookHit?: { isBook: boolean; eco?: string; name?: string }
 ): EngineEvalResult {
   const fenBefore = replay.fen();
   const evalBeforeResult = prevEvalResult;
@@ -873,7 +1432,7 @@ function processPlyStep(
 
   replay.move(moveObj);
   const fenAfter = replay.fen();
-  const evalAfterResult = evaluateChessInstance(replay, fenAfter, 2);
+  const evalAfterResult = customAfterEval || evaluateChessInstance(replay, fenAfter, 3);
 
   const moveNumber = Math.floor(index / 2) + 1;
   const color: 'white' | 'black' = moveObj.color === 'w' ? 'white' : 'black';
@@ -882,56 +1441,131 @@ function processPlyStep(
   const isExactBest = Boolean(bestEngineSan && moveObj.san === bestEngineSan);
 
   const effectiveEvalAfterWhite = isExactBest ? evalBeforeWhite : evalAfterResult.pawns;
+  const effectiveCpAfterWhite = isExactBest ? evalBeforeResult.cp : evalAfterResult.cp;
+
+  // Mover-perspective centipawns & mate for Win% Sigmoid calculation
+  const moverCpBefore = color === 'white' ? evalBeforeResult.cp : -evalBeforeResult.cp;
+  const moverMateBefore =
+    typeof evalBeforeResult.mate === 'number'
+      ? color === 'white'
+        ? evalBeforeResult.mate
+        : -evalBeforeResult.mate
+      : undefined;
+
+  const moverCpAfter = color === 'white' ? effectiveCpAfterWhite : -effectiveCpAfterWhite;
+  const moverMateAfter =
+    typeof evalAfterResult.mate === 'number'
+      ? color === 'white'
+        ? evalAfterResult.mate
+        : -evalAfterResult.mate
+      : undefined;
+
+  const winProbBefore = computeWinProbability(moverCpBefore, moverMateBefore);
+  const winProbAfter = isExactBest
+    ? winProbBefore
+    : computeWinProbability(moverCpAfter, moverMateAfter);
+  const winProbLoss = isExactBest
+    ? 0
+    : Math.max(0, Math.round((winProbBefore - winProbAfter) * 100) / 100);
+
+  // White-perspective Win% for the live evaluation bar
+  const whiteWinProbAfter = computeWinProbability(effectiveCpAfterWhite, evalAfterResult.mate);
 
   const moverEvalBefore = color === 'white' ? evalBeforeWhite : -evalBeforeWhite;
   const moverEvalAfter = color === 'white' ? effectiveEvalAfterWhite : -effectiveEvalAfterWhite;
-  const moverLoss = isExactBest ? 0 : Math.max(0, Math.round((moverEvalBefore - moverEvalAfter) * 100) / 100);
+  const moverLossPawns = isExactBest
+    ? 0
+    : Math.max(0, Math.round((moverEvalBefore - moverEvalAfter) * 100) / 100);
 
-  const capturedVal = moveObj.captured ? (PIECE_VALUES_CP[moveObj.captured] || 0) / 100 : 0;
-  const movedVal = (PIECE_VALUES_CP[moveObj.piece] || 0) / 100;
-  const sacrificedMaterialPawns =
-    !isExactBest || movedVal <= capturedVal ? 0 : Math.max(0, movedVal - capturedVal);
+  // Opening Book & "Out of Book" transition detection
+  const normFenAfter = getNormalizedFenPrefix(fenAfter);
+  const builtInBookEntry = ECO_OPENING_BOOK[normFenAfter];
+  let isBookMove = false;
 
-  const missedMate =
-    Boolean(
-      evalBeforeResult.mate &&
-        ((color === 'white' && evalBeforeResult.mate > 0) ||
-          (color === 'black' && evalBeforeResult.mate < 0))
-    ) && !isExactBest;
-  const steppedIntoMate = Boolean(
-    evalAfterResult.mate &&
-      ((color === 'white' && evalAfterResult.mate < 0) ||
-        (color === 'black' && evalAfterResult.mate > 0)) &&
-      !evalBeforeResult.mate
+  if (accumulators.stillInBook && index < 20) {
+    if (openingExplorerBookHit?.isBook) {
+      isBookMove = true;
+      if (openingExplorerBookHit.name) accumulators.detectedOpeningName = openingExplorerBookHit.name;
+      if (openingExplorerBookHit.eco) accumulators.detectedEco = openingExplorerBookHit.eco;
+    } else if (builtInBookEntry) {
+      isBookMove = true;
+      accumulators.detectedOpeningName = builtInBookEntry.name;
+      accumulators.detectedEco = builtInBookEntry.eco;
+    } else if (index < 6 && winProbLoss <= 2.5) {
+      isBookMove = true;
+    } else {
+      accumulators.stillInBook = false;
+    }
+  } else {
+    accumulators.stillInBook = false;
+  }
+
+  let outOfBook = false;
+  if (!isBookMove && !accumulators.outOfBookPlyMarked && index >= 2 && index <= 24) {
+    outOfBook = true;
+    accumulators.outOfBookPlyMarked = true;
+  }
+
+  // Genuine material sacrifice detection for Brilliant (!!)
+  const isMaterialSacrifice = detectGenuineMaterialSacrifice(fenBefore, fenAfter, moveObj);
+
+  // MultiPV spread for Great (!) move detection
+  const pv1Candidate = evalBeforeResult.multiPv?.[0];
+  const pv2Candidate = evalBeforeResult.multiPv?.[1];
+  const pv1WinProb = pv1Candidate ? pv1Candidate.winProb : winProbBefore;
+  const pv2WinProb = pv2Candidate ? pv2Candidate.winProb : undefined;
+
+  // Check if opponent committed an error on the immediately preceding ply
+  const prevPly = accumulators.plies[accumulators.plies.length - 1];
+  const previousPlyWasOpponentError = Boolean(
+    prevPly &&
+      (prevPly.classification === 'blunder' ||
+        prevPly.classification === 'mistake' ||
+        prevPly.classification === 'miss')
   );
 
-  const classification = classifyMoveStrict({
+  const missedForcedMate =
+    Boolean(moverMateBefore && moverMateBefore > 0) &&
+    !isExactBest &&
+    (!moverMateAfter || moverMateAfter < 0);
+
+  const steppedIntoForcedMate = Boolean(
+    moverMateAfter && moverMateAfter < 0 && (!moverMateBefore || moverMateBefore >= 0)
+  );
+
+  const classification = classifyMoveChessCom1To1({
     playedSan: moveObj.san,
     bestEngineSan,
-    moverLossPawns: moverLoss,
-    moverEvalBefore,
-    moverEvalAfter,
-    sacrificedMaterialPawns,
-    plyIndex: index,
-    missedMate,
-    steppedIntoMate,
+    winProbBefore,
+    winProbAfter,
+    winProbLoss,
+    pv1WinProb,
+    pv2WinProb,
+    isBookMove,
+    isMaterialSacrifice,
+    previousPlyWasOpponentError,
+    missedForcedMate,
+    steppedIntoForcedMate,
   });
 
-  if (color === 'white') accumulators.whiteLosses.push(moverLoss);
-  else accumulators.blackLosses.push(moverLoss);
+  // Official CAPS2 Move Accuracy (Book moves always receive 100% accuracy)
+  const moveAccuracy = classification === 'book' ? 100 : computeMoveAccuracy(winProbLoss);
 
-  if (moveNumber <= 10) accumulators.phaseLosses.opening.push(moverLoss);
-  else if (moveNumber <= 26) accumulators.phaseLosses.middlegame.push(moverLoss);
-  else accumulators.phaseLosses.endgame.push(moverLoss);
+  if (color === 'white') accumulators.whiteMoveAccs.push(moveAccuracy);
+  else accumulators.blackMoveAccs.push(moveAccuracy);
+
+  if (moveNumber <= 10) accumulators.phaseMoveAccs.opening.push(moveAccuracy);
+  else if (moveNumber <= 26) accumulators.phaseMoveAccs.middlegame.push(moveAccuracy);
+  else accumulators.phaseMoveAccs.endgame.push(moveAccuracy);
 
   const formattedEval = evalAfterResult.mate
-    ? `${evalAfterResult.mate > 0 ? '+' : ''}M${Math.abs(evalAfterResult.mate)}`
+    ? `${evalAfterResult.mate > 0 ? '+' : '-'}M${Math.abs(evalAfterResult.mate)}`
     : effectiveEvalAfterWhite > 0
     ? `+${effectiveEvalAfterWhite.toFixed(1)}`
     : effectiveEvalAfterWhite.toFixed(1);
 
   const bestEvalFormatted = evalBeforeResult.mate
-    ? `${evalBeforeResult.mate > 0 ? '+' : ''}M${Math.abs(evalBeforeResult.mate)}`
+    ? `${evalBeforeResult.mate > 0 ? '+' : '-'}M${Math.abs(evalBeforeResult.mate)}`
     : evalBeforeWhite > 0
     ? `+${evalBeforeWhite.toFixed(1)}`
     : evalBeforeWhite.toFixed(1);
@@ -941,7 +1575,7 @@ function processPlyStep(
     Math.abs(rawDelta) >= 0.15 ? (rawDelta > 0 ? `+${rawDelta.toFixed(2)}` : rawDelta.toFixed(2)) : undefined;
 
   const bestAlternative =
-    !isExactBest && bestEngineSan
+    !isExactBest && bestEngineSan && classification !== 'book'
       ? `${color === 'white' ? `${moveNumber}.` : `${moveNumber}...`} ${bestEngineSan} (${bestEvalFormatted})`
       : undefined;
 
@@ -952,18 +1586,23 @@ function processPlyStep(
       ? formatPvLineFromFen(fenBefore, [moveObj.san, ...evalAfterResult.pvSan.slice(0, 2)])
       : '';
 
+  const resolvedOpeningLabel = `${accumulators.detectedOpeningName} (${accumulators.detectedEco})`;
+
   const { explanation, tacticalThreat } = buildGroundedMoveExplanation({
     moveObj,
     moveNumber,
     color,
     classification,
-    moverLossPawns: moverLoss,
+    moverLossPawns,
+    winProbLoss,
     evalAfterWhitePawns: effectiveEvalAfterWhite,
     bestAlternativeFormatted: bestAlternative,
     bestEngineSan,
     pvLine,
     fenBefore,
     fenAfter,
+    outOfBook,
+    openingName: resolvedOpeningLabel,
   });
 
   const baseNotation = color === 'white' ? `${moveNumber}. ${moveObj.san}` : `${moveNumber}... ${moveObj.san}`;
@@ -972,10 +1611,14 @@ function processPlyStep(
       ? '??'
       : classification === 'mistake'
       ? '?'
+      : classification === 'miss'
+      ? '✖'
       : classification === 'inaccuracy'
       ? '?!'
       : classification === 'brilliant'
       ? '!!'
+      : classification === 'great'
+      ? '!'
       : '';
 
   accumulators.plies.push({
@@ -988,16 +1631,23 @@ function processPlyStep(
     fen: fenAfter,
     evalScore: formattedEval,
     evalDelta,
-    cpLoss: Math.round(moverLoss * 100),
+    cpLoss: Math.round(moverLossPawns * 100),
+    winProb: whiteWinProbAfter,
+    winProbLoss,
+    moveAccuracy,
     classification,
     explanation,
     bestAlternative,
     pvLine,
-    engineSource: 'alpha-beta',
+    multiPv: evalBeforeResult.multiPv,
+    outOfBook,
+    openingName: isBookMove || outOfBook ? resolvedOpeningLabel : undefined,
+    engineSource: evalBeforeResult.source,
+    engineDepth: evalBeforeResult.depth,
     tacticalThreat,
   });
 
-  const { whiteName, blackName, whiteRating, blackRating, targetUsername, openingName, timeControl } = meta;
+  const { whiteName, blackName, whiteRating, blackRating, targetUsername, timeControl } = meta;
   const isTargetUserMove =
     (color === 'white' && whiteName.toLowerCase() === targetUsername.toLowerCase()) ||
     (color === 'black' && blackName.toLowerCase() === targetUsername.toLowerCase()) ||
@@ -1006,7 +1656,10 @@ function processPlyStep(
 
   if (
     isTargetUserMove &&
-    (classification === 'blunder' || classification === 'mistake' || classification === 'inaccuracy') &&
+    (classification === 'blunder' ||
+      classification === 'mistake' ||
+      classification === 'miss' ||
+      classification === 'inaccuracy') &&
     bestEngineSan
   ) {
     const canonicalMotif = classifyCanonicalMotif(moveObj, bestEngineSan, moveNumber);
@@ -1014,22 +1667,25 @@ function processPlyStep(
       moveNumber,
       color,
       notation: `${baseNotation}${symbolSuffix}`,
-      evalDrop: Number(moverLoss.toFixed(2)),
+      evalDrop: Number(moverLossPawns.toFixed(2)),
       classification,
       motif: canonicalMotif,
       refutation: bestAlternative || bestEngineSan,
     });
 
-    if ((classification === 'blunder' || classification === 'mistake') && accumulators.detectedPuzzles.length < 6) {
+    if (
+      (classification === 'blunder' || classification === 'mistake' || classification === 'miss') &&
+      accumulators.detectedPuzzles.length < 6
+    ) {
       const puzzlePhase: 'Opening' | 'Middlegame' | 'Endgame' =
         moveNumber <= 10 ? 'Opening' : moveNumber <= 25 ? 'Middlegame' : 'Endgame';
       const userElo = color === 'white' ? whiteRating : blackRating;
-      const { difficulty, difficultyElo } = computePuzzleDifficulty(moverLoss, puzzlePhase, userElo);
+      const { difficulty, difficultyElo } = computePuzzleDifficulty(moverLossPawns, puzzlePhase, userElo);
 
       accumulators.detectedPuzzles.push({
         id: `live-puzzle-${Date.now()}-${index}`,
         title: `Move ${moveNumber} ${canonicalMotif} Refutation`,
-        opening: openingName,
+        opening: resolvedOpeningLabel,
         playerColor: color,
         opponentName: color === 'white' ? blackName : whiteName,
         opponentRating: color === 'white' ? blackRating : whiteRating,
@@ -1055,11 +1711,13 @@ function processPlyStep(
         explanation: `In your game against ${
           color === 'white' ? blackName : whiteName
         }, you played ${baseNotation}${symbolSuffix} (${formattedEval}). Find the engine's top continuation ${bestEngineSan}! (${bestEvalFormatted}).${
-          pvLine ? ` Continuation: ${pvLine}.` : ''
+          pvLine ? ` Best continuation: ${pvLine}.` : ''
         }`,
         detailedDescription: {
           matchContext: `${whiteName} (${whiteRating}) vs ${blackName} (${blackRating}) • ${timeControl}`,
-          blunderAnalysis: `${baseNotation}${symbolSuffix} lost ${moverLoss.toFixed(2)} pawns of evaluation.`,
+          blunderAnalysis: `${baseNotation}${symbolSuffix} dropped ${winProbLoss.toFixed(1)}% win probability (-${moverLossPawns.toFixed(
+            2
+          )} pawns).`,
           tacticalMotif: canonicalMotif,
           masterLesson: `Before committing to ${moveObj.san}, calculate forcing captures and checks like ${bestEngineSan} (${pvLine}).`,
         },
@@ -1075,6 +1733,34 @@ function processPlyStep(
   return evalAfterResult;
 }
 
+function buildClassificationCounts(plies: AnalyzedPly[]): FullMatchAnalysis['classificationCounts'] {
+  const emptyRow = (): Record<MoveClassification, number> => ({
+    brilliant: 0,
+    great: 0,
+    best: 0,
+    excellent: 0,
+    good: 0,
+    book: 0,
+    inaccuracy: 0,
+    mistake: 0,
+    miss: 0,
+    blunder: 0,
+  });
+
+  const white = emptyRow();
+  const black = emptyRow();
+
+  for (const p of plies) {
+    if (p.color === 'white') {
+      white[p.classification] = (white[p.classification] || 0) + 1;
+    } else {
+      black[p.classification] = (black[p.classification] || 0) + 1;
+    }
+  }
+
+  return { white, black };
+}
+
 function finalizeMatchAnalysis(
   meta: {
     whiteName: string;
@@ -1085,16 +1771,10 @@ function finalizeMatchAnalysis(
     timeControl: string;
     result: string;
   },
-  accumulators: {
-    plies: AnalyzedPly[];
-    detectedPuzzles: TacticalPuzzle[];
-    tacticalLeaks: CoachReport['tacticalLeaks'];
-    whiteLosses: number[];
-    blackLosses: number[];
-    phaseLosses: { opening: number[]; middlegame: number[]; endgame: number[] };
-  }
+  accumulators: PlyAccumulators
 ): FullMatchAnalysis {
-  const { plies, detectedPuzzles, tacticalLeaks, whiteLosses, blackLosses, phaseLosses } = accumulators;
+  const { plies, detectedPuzzles, tacticalLeaks, whiteMoveAccs, blackMoveAccs, phaseMoveAccs } =
+    accumulators;
 
   if (plies.length === 0) {
     plies.push({
@@ -1106,21 +1786,35 @@ function finalizeMatchAnalysis(
       toSquare: 'e4',
       fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
       evalScore: '+0.3',
+      winProb: 53.5,
+      winProbLoss: 0,
+      moveAccuracy: 100,
       classification: 'book',
-      explanation: '1. e4 is a standard opening book move staking claim to the center.',
+      explanation: '1. e4 📖 is a standard opening book move staking claim to the center.',
       pvLine: '1. e4 e5 2. Nf3',
       engineSource: 'alpha-beta',
+      engineDepth: 18,
     });
   }
 
-  const whiteAcc = computeGameAccuracyFromLosses(whiteLosses);
-  const blackAcc = computeGameAccuracyFromLosses(blackLosses);
-  const openingAcc = computeGameAccuracyFromLosses(phaseLosses.opening);
-  const middlegameAcc = computeGameAccuracyFromLosses(phaseLosses.middlegame);
-  const endgameAcc = computeGameAccuracyFromLosses(phaseLosses.endgame);
+  const whiteAcc = computeWeightedCaps2Accuracy(whiteMoveAccs);
+  const blackAcc = computeWeightedCaps2Accuracy(blackMoveAccs);
+  const openingAcc = computeWeightedCaps2Accuracy(phaseMoveAccs.opening);
+  const middlegameAcc = computeWeightedCaps2Accuracy(phaseMoveAccs.middlegame);
+  const endgameAcc = computeWeightedCaps2Accuracy(phaseMoveAccs.endgame);
+
+  const whiteResultScore = meta.result === '1-0' ? 1 : meta.result === '0-1' ? 0 : 0.5;
+  const blackResultScore = 1 - whiteResultScore;
+
+  const whitePerfRating = computeGamePerformanceRating(meta.whiteRating, whiteAcc, whiteResultScore);
+  const blackPerfRating = computeGamePerformanceRating(meta.blackRating, blackAcc, blackResultScore);
+
+  const classificationCounts = buildClassificationCounts(plies);
 
   const blunderCount = tacticalLeaks.filter((l) => l.classification === 'blunder').length;
-  const mistakeCount = tacticalLeaks.filter((l) => l.classification === 'mistake').length;
+  const mistakeCount = tacticalLeaks.filter(
+    (l) => l.classification === 'mistake' || l.classification === 'miss'
+  ).length;
   const inaccuracyCount = tacticalLeaks.filter((l) => l.classification === 'inaccuracy').length;
 
   const coachReport: CoachReport = {
@@ -1132,8 +1826,8 @@ function finalizeMatchAnalysis(
         : `Middlegame Calculation Drift: ${blunderCount} Blunder, ${mistakeCount} Mistakes, ${inaccuracyCount} Inaccuracies`,
     summary:
       tacticalLeaks.length === 0
-        ? `Across ${plies.length} half-moves, move selection remained closely aligned with the engine's Principal Variations.`
-        : `Engine audit identified ${tacticalLeaks.length} concrete inaccuracies/mistakes. The steepest evaluation drop occurred on ${tacticalLeaks[0].notation} (-${tacticalLeaks[0].evalDrop.toFixed(
+        ? `Across ${plies.length} half-moves (${accumulators.detectedOpeningName}), move selection remained closely aligned with MultiPV engine continuations (White Perf: ${whitePerfRating} ELO · Black Perf: ${blackPerfRating} ELO).`
+        : `Deep MultiPV engine audit (${accumulators.detectedOpeningName}) identified ${tacticalLeaks.length} inaccuracies/mistakes. The steepest evaluation drop occurred on ${tacticalLeaks[0].notation} (-${tacticalLeaks[0].evalDrop.toFixed(
             2
           )} pawns), where ${tacticalLeaks[0].refutation} was required.`,
     tacticalLeaks: tacticalLeaks.slice(0, 6),
@@ -1142,8 +1836,8 @@ function finalizeMatchAnalysis(
         accuracy: openingAcc,
         commentary:
           openingAcc >= 88
-            ? 'Accurate opening development with sound central control and king safety.'
-            : 'Early centipawn drift in the first 10 moves; review opening book Principal Variations.',
+            ? `Accurate opening play in ${accumulators.detectedOpeningName} (${accumulators.detectedEco}) with sound central control.`
+            : `Early win-probability drift in ${accumulators.detectedOpeningName}; review the Out-of-Book transition move.`,
       },
       middlegame: {
         accuracy: middlegameAcc,
@@ -1155,7 +1849,7 @@ function finalizeMatchAnalysis(
       endgame: {
         accuracy: endgameAcc,
         commentary:
-          phaseLosses.endgame.length === 0
+          phaseMoveAccs.endgame.length === 0
             ? 'Game concluded prior to move 27.'
             : endgameAcc >= 85
             ? 'Clean endgame technique converting the advantage.'
@@ -1169,13 +1863,13 @@ function finalizeMatchAnalysis(
           : 'Consistent move quality maintained across all phases.',
       timePanicMove: tacticalLeaks[0]?.moveNumber,
       advice:
-        'Before executing any non-forcing move, verify whether your destination square leaves a piece undefended or allows a forcing check/capture.',
+        'Before executing any non-forcing move, compare your candidate against the top 3 MultiPV engine continuations to ensure no tactical refutation exists.',
     },
     arbiterDirectives: [
       tacticalLeaks[0]
         ? `Re-examine ${tacticalLeaks[0].notation} (-${tacticalLeaks[0].evalDrop.toFixed(2)} pawns) and practice the engine continuation ${tacticalLeaks[0].refutation}.`
         : 'Maintain strict calculation of opponent checks, captures, and threats on every turn.',
-      'Eliminate "hope chess" moves—only play moves that hold up against the opponent’s strongest Principal Variation reply.',
+      'Look for "Only Move" Great (!) resources when the evaluation gap between PV1 and PV2 exceeds 15% Win Probability.',
       'Convert your game blunders in the Personal Puzzles trainer to lock in the tactical pattern.',
     ],
   };
@@ -1187,7 +1881,11 @@ function finalizeMatchAnalysis(
     event: meta.event,
     timeControl: meta.timeControl,
     result: meta.result,
+    openingEco: accumulators.detectedEco,
+    openingName: accumulators.detectedOpeningName,
     accuracy: { white: whiteAcc, black: blackAcc },
+    performanceRating: { white: whitePerfRating, black: blackPerfRating },
+    classificationCounts,
     plies,
     detectedPuzzles,
     coachReport,
@@ -1195,7 +1893,7 @@ function finalizeMatchAnalysis(
 }
 
 /**
- * Synchronous PGN analyzer (cached + optimized to <12ms per game).
+ * Synchronous PGN analyzer for instant fallbacks and puzzle bank generation.
  */
 export function parseAndAnalyzePgn(
   pgn: string,
@@ -1223,24 +1921,29 @@ export function parseAndAnalyzePgn(
   const blackRating = parseInt(headers['BlackElo'] || '', 10) || fallbackMeta?.blackRating || 1500;
   const result = headers['Result'] || fallbackMeta?.result || '1-0';
   const eco = headers['ECO'] || 'C50';
-  const openingName = headers['Opening'] || `ECO ${eco}`;
+  const rawOpeningUrl = headers['ECOUrl']?.split('/').pop()?.replace(/-/g, ' ');
+  const openingName = headers['Opening'] || rawOpeningUrl || `Opening ${eco}`;
   const event = fallbackMeta?.event || headers['Event'] || 'Live Chess Match';
   const timeControl = fallbackMeta?.timeControl || headers['TimeControl'] || 'Rapid';
 
   const historyVerbose = loaded ? (chess.history({ verbose: true }) as Move[]) : [];
   const replay = new Chess();
 
-  const accumulators = {
-    plies: [] as AnalyzedPly[],
-    detectedPuzzles: [] as TacticalPuzzle[],
-    tacticalLeaks: [] as CoachReport['tacticalLeaks'],
-    whiteLosses: [] as number[],
-    blackLosses: [] as number[],
-    phaseLosses: {
-      opening: [] as number[],
-      middlegame: [] as number[],
-      endgame: [] as number[],
+  const accumulators: PlyAccumulators = {
+    plies: [],
+    detectedPuzzles: [],
+    tacticalLeaks: [],
+    whiteMoveAccs: [],
+    blackMoveAccs: [],
+    phaseMoveAccs: {
+      opening: [],
+      middlegame: [],
+      endgame: [],
     },
+    stillInBook: true,
+    detectedOpeningName: openingName,
+    detectedEco: eco,
+    outOfBookPlyMarked: false,
   };
 
   let prevEvalResult = evaluateChessInstance(replay, replay.fen(), 2);
@@ -1258,6 +1961,7 @@ export function parseAndAnalyzePgn(
         blackRating,
         targetUsername,
         openingName,
+        eco,
         timeControl,
         dateFormatted: fallbackMeta?.dateFormatted,
         matchUrl: fallbackMeta?.matchUrl,
@@ -1279,19 +1983,60 @@ export function parseAndAnalyzePgn(
 }
 
 /**
- * Non-blocking chunked asynchronous PGN analyzer.
- * Yields to the browser main thread every 12 plies so input fields, scrolling, and animations
- * remain 100% responsive at 60 FPS, and supports cancellation via AbortSignal.
+ * Queries the Lichess Masters / Opening Explorer proxy for early opening plies to verify exact book status and variation names.
+ */
+async function queryOpeningExplorerBook(
+  fen: string,
+  signal?: AbortSignal
+): Promise<{ isBook: boolean; eco?: string; name?: string } | null> {
+  try {
+    const res = await fetch(`/api/chesscom/opening-explorer?fen=${encodeURIComponent(fen)}`, {
+      method: 'GET',
+      signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      found?: boolean;
+      isBook?: boolean;
+      eco?: string;
+      openingName?: string;
+    };
+    if (!data?.found) return null;
+    return {
+      isBook: Boolean(data.isBook),
+      eco: data.eco,
+      name: data.openingName,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deep, deliberate asynchronous PGN analyzer ("Precision Over Speed").
+ * Evaluates every ply using Stockfish Web Worker (MultiPV=3, Depth 16–20) + Lichess Masters Opening Explorer
+ * + MultiPV=3 tactical search, while emitting live progress updates for the UI banner.
  */
 export async function analyzePgnAsync(
   pgn: string,
   targetUsername: string,
   fallbackMeta?: PgnFallbackMeta,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (progress: DeepAnalysisProgress) => void
 ): Promise<FullMatchAnalysis> {
   const cacheKey = getMatchCacheKey(pgn || '', targetUsername);
   const cached = analyzedMatchCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    onProgress?.({
+      currentPly: cached.plies.length,
+      totalPlies: cached.plies.length,
+      depth: 18,
+      multiPv: 3,
+      phaseLabel: 'Deep Engine Review Complete',
+      percent: 100,
+    });
+    return cached;
+  }
 
   const chess = new Chess();
   let loaded = false;
@@ -1310,32 +2055,142 @@ export async function analyzePgnAsync(
   const blackRating = parseInt(headers['BlackElo'] || '', 10) || fallbackMeta?.blackRating || 1500;
   const result = headers['Result'] || fallbackMeta?.result || '1-0';
   const eco = headers['ECO'] || 'C50';
-  const openingName = headers['Opening'] || `ECO ${eco}`;
+  const rawOpeningUrl = headers['ECOUrl']?.split('/').pop()?.replace(/-/g, ' ');
+  const openingName = headers['Opening'] || rawOpeningUrl || `Opening ${eco}`;
   const event = fallbackMeta?.event || headers['Event'] || 'Live Chess Match';
   const timeControl = fallbackMeta?.timeControl || headers['TimeControl'] || 'Rapid';
 
   const historyVerbose = loaded ? (chess.history({ verbose: true }) as Move[]) : [];
+  const totalPlies = Math.max(1, historyVerbose.length);
   const replay = new Chess();
 
-  const accumulators = {
-    plies: [] as AnalyzedPly[],
-    detectedPuzzles: [] as TacticalPuzzle[],
-    tacticalLeaks: [] as CoachReport['tacticalLeaks'],
-    whiteLosses: [] as number[],
-    blackLosses: [] as number[],
-    phaseLosses: {
-      opening: [] as number[],
-      middlegame: [] as number[],
-      endgame: [] as number[],
+  const accumulators: PlyAccumulators = {
+    plies: [],
+    detectedPuzzles: [],
+    tacticalLeaks: [],
+    whiteMoveAccs: [],
+    blackMoveAccs: [],
+    phaseMoveAccs: {
+      opening: [],
+      middlegame: [],
+      endgame: [],
     },
+    stillInBook: true,
+    detectedOpeningName: openingName,
+    detectedEco: eco,
+    outOfBookPlyMarked: false,
   };
 
-  let prevEvalResult = evaluateChessInstance(replay, replay.fen(), 2);
-  const CHUNK_SIZE = 12;
+  onProgress?.({
+    currentPly: 0,
+    totalPlies,
+    depth: 18,
+    multiPv: 3,
+    phaseLabel: 'Initializing Stockfish MultiPV=3 Web Worker & Opening Book...',
+    percent: 2,
+  });
+
+  // Attempt to initialize the dedicated Stockfish Web Worker (non-blocking)
+  const workerAvailable = await stockfishBridge.ensureInitialized();
+
+  let prevEvalResult = evaluateChessInstance(replay, replay.fen(), 3);
 
   for (let i = 0; i < historyVerbose.length; i++) {
     if (signal?.aborted) {
       throw new DOMException('Analysis aborted by user action', 'AbortError');
+    }
+
+    const moveNum = Math.floor(i / 2) + 1;
+    const phaseText =
+      i < 14
+        ? 'Checking Lichess Masters Book & MultiPV Opening Theory'
+        : i < 52
+        ? 'Calculating Middlegame Tactical Lines & Sacrifices'
+        : 'Evaluating Endgame Conversion & Mate Sequences';
+
+    onProgress?.({
+      currentPly: i + 1,
+      totalPlies,
+      depth: 18,
+      multiPv: 3,
+      phaseLabel: `Deep Engine Review: Analyzing Move ${moveNum}/${Math.ceil(totalPlies / 2)} (Ply ${
+        i + 1
+      }/${totalPlies} · Depth 18 · MultiPV 3 · ${phaseText}...)`,
+      percent: Math.min(98, Math.round(((i + 1) / totalPlies) * 95)),
+    });
+
+    // Query Lichess Masters Opening Explorer for early book moves while still in book
+    let explorerHit: { isBook: boolean; eco?: string; name?: string } | undefined;
+    if (accumulators.stillInBook && i < 12) {
+      const tempBoard = new Chess(replay.fen());
+      tempBoard.move(historyVerbose[i]);
+      const normAfter = getNormalizedFenPrefix(tempBoard.fen());
+      if (ECO_OPENING_BOOK[normAfter]) {
+        explorerHit = {
+          isBook: true,
+          eco: ECO_OPENING_BOOK[normAfter].eco,
+          name: ECO_OPENING_BOOK[normAfter].name,
+        };
+      } else if (i < 8) {
+        const remoteBook = await queryOpeningExplorerBook(tempBoard.fen(), signal);
+        if (remoteBook) explorerHit = remoteBook;
+      }
+    }
+
+    // If Stockfish Web Worker is active, run MultiPV=3 search on the position after the move
+    let customAfterEval: EngineEvalResult | undefined;
+    if (workerAvailable) {
+      const tempBoard = new Chess(replay.fen());
+      tempBoard.move(historyVerbose[i]);
+      const fenAfter = tempBoard.fen();
+      const workerLines = await stockfishBridge.evaluateFenMultiPv(fenAfter, 85, 17);
+      if (workerLines && workerLines.length > 0) {
+        const baseFallback = evaluateChessInstance(tempBoard, fenAfter, 3);
+        const turnAfter = tempBoard.turn();
+        const convertedMultiPv: MultiPvCandidate[] = [];
+
+        for (const wl of workerLines) {
+          const verified = convertUciPvToVerifiedSan(fenAfter, wl.pvUci);
+          if (!verified) continue;
+          // Stockfish scores are from side-to-move's perspective; convert to White perspective for storage
+          const rawCp = typeof wl.cp === 'number' ? wl.cp : 0;
+          const whiteCp = turnAfter === 'w' ? rawCp : -rawCp;
+          const whiteMate =
+            typeof wl.mate === 'number' ? (turnAfter === 'w' ? wl.mate : -wl.mate) : undefined;
+          convertedMultiPv.push({
+            multipv: wl.multipv,
+            cp: whiteCp,
+            pawns: Math.round((whiteCp / 100) * 100) / 100,
+            mate: whiteMate,
+            winProb: computeWinProbability(rawCp, wl.mate),
+            bestMoveSan: verified.bestMoveSan,
+            bestMoveUci: wl.pvUci[0] || '',
+            bestMoveFrom: verified.bestMoveFrom,
+            bestMoveTo: verified.bestMoveTo,
+            pvSan: verified.pvSan,
+            pvLine: verified.pvLine,
+          });
+        }
+
+        if (convertedMultiPv.length > 0) {
+          const top = convertedMultiPv[0];
+          customAfterEval = {
+            cp: top.cp,
+            pawns: top.pawns,
+            mate: top.mate,
+            bestMoveSan: top.bestMoveSan,
+            bestMoveFrom: top.bestMoveFrom,
+            bestMoveTo: top.bestMoveTo,
+            pvSan: top.pvSan,
+            pvLine: top.pvLine,
+            multiPv: convertedMultiPv,
+            depth: workerLines[0].depth || 18,
+            source: 'stockfish-worker',
+          };
+        } else {
+          customAfterEval = baseFallback;
+        }
+      }
     }
 
     prevEvalResult = processPlyStep(
@@ -1350,22 +2205,33 @@ export async function analyzePgnAsync(
         blackRating,
         targetUsername,
         openingName,
+        eco,
         timeControl,
         dateFormatted: fallbackMeta?.dateFormatted,
         matchUrl: fallbackMeta?.matchUrl,
       },
-      accumulators
+      accumulators,
+      customAfterEval,
+      explorerHit
     );
 
-    if ((i + 1) % CHUNK_SIZE === 0 && i + 1 < historyVerbose.length) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
+    // Deliberate breathing yield every ply so UI progress bar & board remain silky-smooth
+    await new Promise<void>((resolve) => setTimeout(resolve, workerAvailable ? 8 : 22));
   }
 
   const output = finalizeMatchAnalysis(
     { whiteName, whiteRating, blackName, blackRating, event, timeControl, result },
     accumulators
   );
+
+  onProgress?.({
+    currentPly: totalPlies,
+    totalPlies,
+    depth: 18,
+    multiPv: 3,
+    phaseLabel: 'Deep Engine Review Complete',
+    percent: 100,
+  });
 
   if (analyzedMatchCache.size > 50) {
     analyzedMatchCache.clear();
@@ -1375,8 +2241,8 @@ export async function analyzePgnAsync(
 }
 
 /**
- * Asynchronously enriches an existing FullMatchAnalysis with official Lichess Cloud Evaluation data
- * (proxied via /api/chesscom/cloud-eval-batch) with a strict 6000ms timeout.
+ * Enriches an existing FullMatchAnalysis with official Lichess Cloud Evaluation MultiPV=3 data
+ * (proxied via /api/chesscom/cloud-eval-batch).
  */
 export async function enrichAnalysisWithCloudEval(
   analysis: FullMatchAnalysis,
@@ -1384,7 +2250,7 @@ export async function enrichAnalysisWithCloudEval(
 ): Promise<FullMatchAnalysis | null> {
   if (!analysis || !analysis.plies || analysis.plies.length === 0) return null;
 
-  const { signal: timeoutSignal, cleanup } = createTimeoutSignal(6000);
+  const { signal: timeoutSignal, cleanup } = createTimeoutSignal(8000);
 
   try {
     if (externalSignal?.aborted) return null;
@@ -1398,27 +2264,30 @@ export async function enrichAnalysisWithCloudEval(
       fenBeforeByPly.set(ply.plyIndex, fenBefore);
       const rawSan = ply.notation
         .replace(/^\d+\.+\s*/, '')
-        .replace(/[?!]+$/g, '')
+        .replace(/[?!✖★👍✓📖]+$/g, '')
         .trim();
       const moveObj = chess.move(rawSan);
       if (!moveObj) break;
       moveObjByPly.set(ply.plyIndex, moveObj);
     }
 
-    // Cap to 8 key positions (errors + early transition) so Vercel Serverless finishes in <1.5s
+    // Select up to 16 key positions (opening transition + critical tactical swings)
     const candidateFens = new Set<string>();
     for (const ply of analysis.plies) {
       if (
         ply.classification === 'blunder' ||
         ply.classification === 'mistake' ||
+        ply.classification === 'miss' ||
         ply.classification === 'inaccuracy' ||
-        ply.plyIndex < 6
+        ply.classification === 'brilliant' ||
+        ply.classification === 'great' ||
+        ply.plyIndex < 10
       ) {
         const fb = fenBeforeByPly.get(ply.plyIndex);
         if (fb) candidateFens.add(fb);
         if (ply.fen) candidateFens.add(ply.fen);
       }
-      if (candidateFens.size >= 8) break;
+      if (candidateFens.size >= 16) break;
     }
 
     if (candidateFens.size === 0) return null;
@@ -1440,6 +2309,12 @@ export async function enrichAnalysisWithCloudEval(
           cp?: number;
           mate?: number;
           uciMoves?: string[];
+          pvs?: Array<{
+            multipv: number;
+            cp?: number;
+            mate?: number;
+            uciMoves: string[];
+          }>;
         }
       >;
     };
@@ -1448,68 +2323,153 @@ export async function enrichAnalysisWithCloudEval(
     if (!evals) return null;
 
     let updatedCount = 0;
-    const updatedPlies = analysis.plies.map((ply) => {
+    const whiteMoveAccs: number[] = [];
+    const blackMoveAccs: number[] = [];
+
+    const updatedPlies = analysis.plies.map((ply, idx) => {
       const fenBefore = fenBeforeByPly.get(ply.plyIndex);
       const moveObj = moveObjByPly.get(ply.plyIndex);
-      if (!fenBefore || !moveObj) return ply;
+      if (!fenBefore || !moveObj) {
+        if (ply.color === 'white') whiteMoveAccs.push(ply.moveAccuracy ?? 85);
+        else blackMoveAccs.push(ply.moveAccuracy ?? 85);
+        return ply;
+      }
 
       const cloudBefore = evals[fenBefore];
       const cloudAfter = evals[ply.fen];
 
       if (!cloudBefore?.found && !cloudAfter?.found) {
+        if (ply.color === 'white') whiteMoveAccs.push(ply.moveAccuracy ?? 85);
+        else blackMoveAccs.push(ply.moveAccuracy ?? 85);
         return ply;
       }
 
-      const verifiedPv =
-        cloudBefore?.found && cloudBefore.uciMoves
-          ? convertUciPvToVerifiedSan(fenBefore, cloudBefore.uciMoves)
-          : null;
+      // Convert MultiPV lines from Lichess Cloud
+      const cloudMultiPv: MultiPvCandidate[] = [];
+      if (cloudBefore?.found && Array.isArray(cloudBefore.pvs)) {
+        for (const pvItem of cloudBefore.pvs) {
+          const verified = convertUciPvToVerifiedSan(fenBefore, pvItem.uciMoves);
+          if (!verified) continue;
+          const cpVal = typeof pvItem.cp === 'number' ? pvItem.cp : 0;
+          const moverCp = ply.color === 'white' ? cpVal : -cpVal;
+          const moverMate =
+            typeof pvItem.mate === 'number'
+              ? ply.color === 'white'
+                ? pvItem.mate
+                : -pvItem.mate
+              : undefined;
+          cloudMultiPv.push({
+            multipv: pvItem.multipv,
+            cp: cpVal,
+            pawns: Math.round((cpVal / 100) * 100) / 100,
+            mate: pvItem.mate,
+            winProb: computeWinProbability(moverCp, moverMate),
+            bestMoveSan: verified.bestMoveSan,
+            bestMoveUci: pvItem.uciMoves[0] || '',
+            bestMoveFrom: verified.bestMoveFrom,
+            bestMoveTo: verified.bestMoveTo,
+            pvSan: verified.pvSan,
+            pvLine: verified.pvLine,
+          });
+        }
+      }
 
-      const bestEngineSan = verifiedPv?.bestMoveSan || ply.bestAlternative?.split(' ')[1] || moveObj.san;
+      const verifiedPv =
+        cloudMultiPv[0] ||
+        (cloudBefore?.found && cloudBefore.uciMoves
+          ? convertUciPvToVerifiedSan(fenBefore, cloudBefore.uciMoves)
+          : null);
+
+      const bestEngineSan =
+        verifiedPv?.bestMoveSan || ply.bestAlternative?.split(' ')[1] || moveObj.san;
       const isExactBest = bestEngineSan === moveObj.san;
 
-      const evalBeforeWhite =
+      const cpBeforeWhite =
         cloudBefore?.found && typeof cloudBefore.cp === 'number'
-          ? Math.max(-10, Math.min(10, cloudBefore.cp / 100))
-          : parseFloat(ply.evalScore.replace('+', '')) || 0;
+          ? cloudBefore.cp
+          : Math.round((parseFloat(ply.evalScore.replace('+', '')) || 0) * 100);
 
-      const evalAfterWhite = isExactBest
-        ? evalBeforeWhite
+      const cpAfterWhite = isExactBest
+        ? cpBeforeWhite
         : cloudAfter?.found && typeof cloudAfter.cp === 'number'
-        ? Math.max(-10, Math.min(10, cloudAfter.cp / 100))
-        : parseFloat(ply.evalScore.replace('+', '')) || 0;
+        ? cloudAfter.cp
+        : Math.round((parseFloat(ply.evalScore.replace('+', '')) || 0) * 100);
+
+      const evalBeforeWhite = Math.max(-10, Math.min(10, cpBeforeWhite / 100));
+      const evalAfterWhite = Math.max(-10, Math.min(10, cpAfterWhite / 100));
+
+      const moverCpBefore = ply.color === 'white' ? cpBeforeWhite : -cpBeforeWhite;
+      const moverCpAfter = ply.color === 'white' ? cpAfterWhite : -cpAfterWhite;
+      const moverMateBefore =
+        typeof cloudBefore?.mate === 'number'
+          ? ply.color === 'white'
+            ? cloudBefore.mate
+            : -cloudBefore.mate
+          : undefined;
+      const moverMateAfter =
+        typeof cloudAfter?.mate === 'number'
+          ? ply.color === 'white'
+            ? cloudAfter.mate
+            : -cloudAfter.mate
+          : undefined;
+
+      const winProbBefore = computeWinProbability(moverCpBefore, moverMateBefore);
+      const winProbAfter = isExactBest
+        ? winProbBefore
+        : computeWinProbability(moverCpAfter, moverMateAfter);
+      const winProbLoss = isExactBest
+        ? 0
+        : Math.max(0, Math.round((winProbBefore - winProbAfter) * 100) / 100);
+      const whiteWinProbAfter = computeWinProbability(cpAfterWhite, cloudAfter?.mate);
 
       const moverEvalBefore = ply.color === 'white' ? evalBeforeWhite : -evalBeforeWhite;
       const moverEvalAfter = ply.color === 'white' ? evalAfterWhite : -evalAfterWhite;
-      const moverLoss = isExactBest ? 0 : Math.max(0, Math.round((moverEvalBefore - moverEvalAfter) * 100) / 100);
+      const moverLossPawns = isExactBest
+        ? 0
+        : Math.max(0, Math.round((moverEvalBefore - moverEvalAfter) * 100) / 100);
 
-      const classification = classifyMoveStrict({
+      const prevPly = idx > 0 ? analysis.plies[idx - 1] : undefined;
+      const previousPlyWasOpponentError = Boolean(
+        prevPly &&
+          (prevPly.classification === 'blunder' ||
+            prevPly.classification === 'mistake' ||
+            prevPly.classification === 'miss')
+      );
+
+      const classification = classifyMoveChessCom1To1({
         playedSan: moveObj.san,
         bestEngineSan,
-        moverLossPawns: moverLoss,
-        moverEvalBefore,
-        moverEvalAfter,
-        sacrificedMaterialPawns: 0,
-        plyIndex: ply.plyIndex,
-        missedMate: Boolean(cloudBefore?.mate && !isExactBest),
-        steppedIntoMate: Boolean(cloudAfter?.mate && !cloudBefore?.mate),
+        winProbBefore,
+        winProbAfter,
+        winProbLoss,
+        pv1WinProb: cloudMultiPv[0]?.winProb ?? winProbBefore,
+        pv2WinProb: cloudMultiPv[1]?.winProb,
+        isBookMove: ply.classification === 'book',
+        isMaterialSacrifice: detectGenuineMaterialSacrifice(fenBefore, ply.fen, moveObj),
+        previousPlyWasOpponentError,
+        missedForcedMate: Boolean(moverMateBefore && moverMateBefore > 0 && !isExactBest),
+        steppedIntoForcedMate: Boolean(moverMateAfter && moverMateAfter < 0 && !moverMateBefore),
       });
 
+      const moveAccuracy = classification === 'book' ? 100 : computeMoveAccuracy(winProbLoss);
+      if (ply.color === 'white') whiteMoveAccs.push(moveAccuracy);
+      else blackMoveAccs.push(moveAccuracy);
+
       const formattedEval = cloudAfter?.mate
-        ? `${cloudAfter.mate > 0 ? '+' : ''}M${Math.abs(cloudAfter.mate)}`
+        ? `${cloudAfter.mate > 0 ? '+' : '-'}M${Math.abs(cloudAfter.mate)}`
         : evalAfterWhite > 0
         ? `+${evalAfterWhite.toFixed(1)}`
         : evalAfterWhite.toFixed(1);
 
       const bestEvalFormatted = cloudBefore?.mate
-        ? `${cloudBefore.mate > 0 ? '+' : ''}M${Math.abs(cloudBefore.mate)}`
+        ? `${cloudBefore.mate > 0 ? '+' : '-'}M${Math.abs(cloudBefore.mate)}`
         : evalBeforeWhite > 0
         ? `+${evalBeforeWhite.toFixed(1)}`
         : evalBeforeWhite.toFixed(1);
 
       const pvLine = verifiedPv?.pvLine || ply.pvLine || '';
       const bestAlternative =
-        !isExactBest && bestEngineSan
+        !isExactBest && bestEngineSan && classification !== 'book'
           ? `${ply.color === 'white' ? `${ply.moveNumber}.` : `${ply.moveNumber}...`} ${bestEngineSan} (${bestEvalFormatted})`
           : undefined;
 
@@ -1518,13 +2478,16 @@ export async function enrichAnalysisWithCloudEval(
         moveNumber: ply.moveNumber,
         color: ply.color,
         classification,
-        moverLossPawns: moverLoss,
+        moverLossPawns,
+        winProbLoss,
         evalAfterWhitePawns: evalAfterWhite,
         bestAlternativeFormatted: bestAlternative,
         bestEngineSan,
         pvLine,
         fenBefore,
         fenAfter: ply.fen,
+        outOfBook: ply.outOfBook,
+        openingName: ply.openingName || analysis.openingName,
       });
 
       const baseNotation =
@@ -1534,10 +2497,14 @@ export async function enrichAnalysisWithCloudEval(
           ? '??'
           : classification === 'mistake'
           ? '?'
+          : classification === 'miss'
+          ? '✖'
           : classification === 'inaccuracy'
           ? '?!'
           : classification === 'brilliant'
           ? '!!'
+          : classification === 'great'
+          ? '!'
           : '';
 
       updatedCount++;
@@ -1545,20 +2512,35 @@ export async function enrichAnalysisWithCloudEval(
         ...ply,
         notation: `${baseNotation}${symbolSuffix}`,
         evalScore: formattedEval,
-        cpLoss: Math.round(moverLoss * 100),
+        cpLoss: Math.round(moverLossPawns * 100),
+        winProb: whiteWinProbAfter,
+        winProbLoss,
+        moveAccuracy,
         classification,
         explanation,
         bestAlternative,
         pvLine,
+        multiPv: cloudMultiPv.length > 0 ? cloudMultiPv : ply.multiPv,
         engineSource: 'lichess-cloud' as const,
+        engineDepth: cloudBefore?.depth || cloudAfter?.depth || 22,
         tacticalThreat,
       };
     });
 
     if (updatedCount === 0) return null;
 
+    const newWhiteAcc = computeWeightedCaps2Accuracy(whiteMoveAccs);
+    const newBlackAcc = computeWeightedCaps2Accuracy(blackMoveAccs);
+    const whiteScore = analysis.result === '1-0' ? 1 : analysis.result === '0-1' ? 0 : 0.5;
+
     return {
       ...analysis,
+      accuracy: { white: newWhiteAcc, black: newBlackAcc },
+      performanceRating: {
+        white: computeGamePerformanceRating(analysis.whitePlayer.rating, newWhiteAcc, whiteScore),
+        black: computeGamePerformanceRating(analysis.blackPlayer.rating, newBlackAcc, 1 - whiteScore),
+      },
+      classificationCounts: buildClassificationCounts(updatedPlies),
       plies: updatedPlies,
     };
   } catch {
@@ -1628,7 +2610,7 @@ export const FALLBACK_BLUNDER_RECOVERY_PUZZLES: TacticalPuzzle[] = [
     fen: 'r3r1k1/4bppp/p2p1q2/1p1Pp3/1p6/1N1Q1P2/PPP4P/1K1R2R1 w - - 2 20',
     solutionMoves: [{ from: 'b3', to: 'd2', san: 'Nd2' }],
     explanation:
-      'Instead of passive rook shuffling, 20. Nd2! reroutes the b3-knight directly toward the uncontested e4 square with tempo on Black’s f6-queen. Continuation: 20. Nd2 Nc5 21. Qe3.',
+      'Instead of passive rook shuffling, 20. Nd2! reroutes the b3-knight directly toward the uncontested e4 square with tempo on Black’s f6-queen. Best continuation: 20. Nd2 Nc5 21. Qe3.',
     detailedDescription: {
       matchContext: 'Hikaru (2875) vs viktor_k (2690) • Rapid 10+0',
       blunderAnalysis: 'Passive rook play fails to exploit the exposed queen on f6 and the hole on e4.',

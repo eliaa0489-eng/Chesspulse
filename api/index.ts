@@ -355,6 +355,83 @@ app.get(
   }
 );
 
+// All-Time Archive List Route
+app.get('/api/chesscom/player/:username/archives', rateLimitMiddleware, async (req: Request, res: Response) => {
+  const username = sanitizeUsername(req.params.username);
+  if (!username) {
+    return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
+  }
+
+  const cacheKey = `archives_list:${username}`;
+  const cached = getCached<{ archives: string[] }>(cacheKey);
+  if (cached) {
+    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
+    return res.json(cached);
+  }
+
+  try {
+    const archivesRes = await fetchChessComJson(
+      `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`,
+      6000
+    );
+    if (archivesRes.status === 404) {
+      return res.status(404).json({ error: 'Player archives not found.', code: 'USER_NOT_FOUND' });
+    }
+    const rawList = Array.isArray(archivesRes.data?.archives) ? archivesRes.data.archives : [];
+    const safeArchives = rawList.filter(
+      (u: unknown): u is string =>
+        typeof u === 'string' && /^https:\/\/api\.chess\.com\/pub\/player\/[a-z0-9_-]+\/games\/\d{4}\/\d{2}$/i.test(u)
+    );
+    const payload = { archives: safeArchives };
+    setCached(cacheKey, payload, 120_000);
+    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
+    return res.json(payload);
+  } catch {
+    return res.status(502).json({ error: 'Failed to retrieve archive list from Chess.com.', code: 'UPSTREAM_ERROR' });
+  }
+});
+
+// Single Monthly Archive Games Route (YYYY/MM)
+app.get(
+  '/api/chesscom/player/:username/archive/:year/:month',
+  rateLimitMiddleware,
+  async (req: Request, res: Response) => {
+    const username = sanitizeUsername(req.params.username);
+    const year = String(req.params.year || '').trim();
+    const month = String(req.params.month || '').trim().padStart(2, '0');
+    if (!username || !/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid archive parameters.', code: 'INVALID_PARAMS' });
+    }
+
+    const cacheKey = `archive_month:${username}:${year}:${month}`;
+    const cached = getCached<{ games: any[] }>(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+      return res.json(cached);
+    }
+
+    try {
+      const url = `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/${year}/${month}`;
+      const gamesRes = await fetchChessComJson(url, 6000);
+      if (gamesRes.status === 404) {
+        return res.json({ games: [] });
+      }
+      const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
+      const games = [];
+      for (const item of rawGames) {
+        const dto = buildSafeMatchGameDto(item);
+        if (dto) games.push(dto);
+      }
+      const payload = { games };
+      setCached(cacheKey, payload, 300_000);
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+      return res.json(payload);
+    } catch {
+      return res.status(502).json({ error: 'Failed to retrieve monthly archive.', code: 'UPSTREAM_ERROR' });
+    }
+  }
+);
+
 app.post('/api/beta-waitlist', rateLimitMiddleware, (_req: Request, res: Response) => {
   res.json({
     success: true,
@@ -372,15 +449,14 @@ async function queryLichessCloudFen(rawFen: unknown) {
     return { found: false };
   }
 
-  const cacheKey = `lichess_eval:${fen}`;
+  const cacheKey = `lichess_eval_mpv3:${fen}`;
   const cached = getCached<any>(cacheKey);
   if (cached) return cached;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2200);
+  const { signal, cleanup } = getAbortSignal(2800);
   try {
     const response = await fetch(
-      `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
+      `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=3`,
       {
         method: 'GET',
         redirect: 'error',
@@ -388,7 +464,7 @@ async function queryLichessCloudFen(rawFen: unknown) {
           'User-Agent': CHESSCOM_USER_AGENT,
           Accept: 'application/json',
         },
-        signal: controller.signal,
+        signal,
       }
     );
 
@@ -399,33 +475,97 @@ async function queryLichessCloudFen(rawFen: unknown) {
     }
 
     const data: any = await response.json();
-    const firstPv = Array.isArray(data?.pvs) && data.pvs.length > 0 ? data.pvs[0] : null;
-    if (!firstPv || typeof firstPv.moves !== 'string') {
+    const rawPvs = Array.isArray(data?.pvs) ? data.pvs : [];
+    if (rawPvs.length === 0 || typeof rawPvs[0]?.moves !== 'string') {
       const miss = { found: false };
       setCached(cacheKey, miss, 300_000);
       return miss;
     }
 
-    const uciMoves = firstPv.moves
-      .trim()
-      .split(/\s+/)
-      .filter((m: string) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
-      .slice(0, 6);
+    const parsedPvs = rawPvs.slice(0, 3).map((pv: any) => {
+      const uciMoves =
+        typeof pv?.moves === 'string'
+          ? pv.moves
+              .trim()
+              .split(/\s+/)
+              .filter((m: string) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))
+              .slice(0, 6)
+          : [];
+      return {
+        cp: typeof pv?.cp === 'number' && Number.isFinite(pv.cp) ? pv.cp : undefined,
+        mate: typeof pv?.mate === 'number' && Number.isFinite(pv.mate) ? pv.mate : undefined,
+        uciMoves,
+      };
+    });
 
+    const firstPv = parsedPvs[0];
     const hit = {
       found: true,
-      depth: typeof data.depth === 'number' ? data.depth : 20,
+      depth: typeof data.depth === 'number' ? data.depth : 22,
       knodes: typeof data.knodes === 'number' ? data.knodes : undefined,
-      cp: typeof firstPv.cp === 'number' && Number.isFinite(firstPv.cp) ? firstPv.cp : undefined,
-      mate: typeof firstPv.mate === 'number' && Number.isFinite(firstPv.mate) ? firstPv.mate : undefined,
-      uciMoves,
+      cp: firstPv.cp,
+      mate: firstPv.mate,
+      uciMoves: firstPv.uciMoves,
+      pvs: parsedPvs,
     };
     setCached(cacheKey, hit, 300_000);
     return hit;
   } catch {
     return { found: false };
   } finally {
-    clearTimeout(timer);
+    cleanup();
+  }
+}
+
+async function queryLichessOpeningExplorer(rawFen: unknown) {
+  if (typeof rawFen !== 'string') return { isBook: false };
+  const fen = rawFen.trim();
+  if (fen.length < 15 || fen.length > 100 || !FEN_SAFE_REGEX.test(fen)) {
+    return { isBook: false };
+  }
+
+  const cacheKey = `lichess_masters:${fen}`;
+  const cached = getCached<any>(cacheKey);
+  if (cached) return cached;
+
+  const { signal, cleanup } = getAbortSignal(2500);
+  try {
+    const response = await fetch(
+      `https://explorer.lichess.ovh/masters?fen=${encodeURIComponent(fen)}&moves=5&topGames=0`,
+      {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          'User-Agent': CHESSCOM_USER_AGENT,
+          Accept: 'application/json',
+        },
+        signal,
+      }
+    );
+
+    if (!response.ok) {
+      return { isBook: false };
+    }
+
+    const data: any = await response.json();
+    const white = typeof data?.white === 'number' ? data.white : 0;
+    const draws = typeof data?.draws === 'number' ? data.draws : 0;
+    const black = typeof data?.black === 'number' ? data.black : 0;
+    const totalGames = white + draws + black;
+    const opening = data?.opening;
+
+    const result = {
+      isBook: totalGames >= 2 || Boolean(opening?.name),
+      eco: typeof opening?.eco === 'string' ? opening.eco : undefined,
+      name: typeof opening?.name === 'string' ? opening.name : undefined,
+      totalGames,
+    };
+    setCached(cacheKey, result, 600_000);
+    return result;
+  } catch {
+    return { isBook: false };
+  } finally {
+    cleanup();
   }
 }
 
@@ -436,7 +576,7 @@ app.get('/api/chesscom/cloud-eval', rateLimitMiddleware, async (req: Request, re
 });
 
 app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
-  const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 8) : [];
+  const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 14) : [];
   const results: Record<string, any> = Object.create(null);
 
   await Promise.all(
@@ -450,4 +590,11 @@ app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Requ
   return res.json({ evaluations: results });
 });
 
+app.get('/api/chesscom/opening-explorer', rateLimitMiddleware, async (req: Request, res: Response) => {
+  const result = await queryLichessOpeningExplorer(req.query.fen);
+  res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=1200');
+  return res.json(result);
+});
+
 export default app;
+

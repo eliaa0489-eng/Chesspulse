@@ -96,16 +96,8 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // User authentication state (saved in localStorage, strictly sanitized)
-  const [loggedInUser, setLoggedInUser] = useState<string | null>(() => {
-    try {
-      const saved = localStorage.getItem('chesspulse_user');
-      if (!saved) return null;
-      return sanitizeChessHandle(saved) || null;
-    } catch {
-      return null;
-    }
-  });
+  // User account state — starts as null on initial load (Showcase Demo Mode) until user connects their handle
+  const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
 
   // Paying subscriber state (saved in localStorage)
   const [isPayingUser, setIsPayingUser] = useState<boolean>(() => {
@@ -116,8 +108,8 @@ export default function App() {
     }
   });
 
-  // Modal states
-  const [analyzedUser, setAnalyzedUser] = useState<string | null>(loggedInUser || null);
+  // Modal & synced account state
+  const [analyzedUser, setAnalyzedUser] = useState<string | null>(null);
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
   const [selectedPlan, setSelectedPlan] = useState<{ name: string; price: string } | null>(null);
@@ -242,6 +234,7 @@ export default function App() {
 
   const handleLogout = () => {
     setLoggedInUser(null);
+    setAnalyzedUser(null);
     try {
       localStorage.removeItem('chesspulse_user');
     } catch {
@@ -252,7 +245,8 @@ export default function App() {
 
   // Handlers
   const handleAnalyzeUsername = (username: string) => {
-    const clean = sanitizeChessHandle(username) || 'hikaru';
+    const clean = sanitizeChessHandle(username) || username.trim();
+    if (!clean) return;
     setLoggedInUser(clean);
     setAnalyzedUser(clean);
     trackAnalyticsEvent('profile_scans', { source: currentPage });
@@ -283,7 +277,12 @@ export default function App() {
 
   const handleStepDemo = (stepNumber: number) => {
     if (stepNumber === 1 || stepNumber === 2) {
-      handleAnalyzeUsername(loggedInUser || 'Hikaru');
+      if (loggedInUser || analyzedUser) {
+        handleAnalyzeUsername((loggedInUser || analyzedUser)!);
+      } else {
+        setAuthTargetRoute('home');
+        setIsAuthModalOpen(true);
+      }
     } else {
       navigateTo('puzzles');
     }
@@ -300,7 +299,7 @@ export default function App() {
       description: 'Verified match analytics, blunder-based puzzles, and lifetime tactical mastery.',
       type: 'profile',
       stats: {
-        username: loggedInUser || 'Hikaru',
+        username: loggedInUser || analyzedUser || 'ShowcaseDemo',
         elo: 1850,
         allTimeWins: 1842,
         brilliantMoves: 42,
@@ -316,7 +315,7 @@ export default function App() {
         currentPage={currentPage}
         onNavigate={(page) => navigateTo(page)}
         loggedInUser={loggedInUser}
-        activeUsername={analyzedUser || loggedInUser || 'Hikaru'}
+        activeUsername={analyzedUser || loggedInUser || 'Showcase Demo'}
         onLogout={handleLogout}
         onOpenLogin={() => {
           setAuthTargetRoute('home');
@@ -372,8 +371,9 @@ export default function App() {
               {/* 3. High-End Performance & Progression Analytics Dashboard */}
               <ErrorBoundary fallbackTitle="Performance Dashboard Temporarily Unavailable">
                 <PerformanceDashboard
-                  username={analyzedUser || loggedInUser || 'Hikaru'}
+                  username={analyzedUser || loggedInUser}
                   loggedInUser={loggedInUser}
+                  onConnectUsername={(u) => handleAnalyzeUsername(u)}
                   onOpenLogin={() => {
                     setAuthTargetRoute('home');
                     setIsAuthModalOpen(true);
@@ -389,7 +389,11 @@ export default function App() {
               <section id="analyzer" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
                 <div className="mb-6">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-xs font-bold text-emerald-800 mb-2">
-                    <span>Live Chess.com Archives Sync • Zero Mock Opponents</span>
+                    <span>
+                      {analyzedUser || loggedInUser
+                        ? `Live Chess.com Archives Sync • @${analyzedUser || loggedInUser}`
+                        : 'Showcase Demo Mode • Enter Username to Load Your Real Games'}
+                    </span>
                   </div>
                   <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
                     Grandmaster Match &amp; Move Analyzer
@@ -401,9 +405,20 @@ export default function App() {
 
                 <ErrorBoundary fallbackTitle="Match Analyzer Temporarily Unavailable">
                   <MoveByMoveAnalyzer
-                    initialUsername={analyzedUser || loggedInUser || 'Hikaru'}
+                    initialUsername={analyzedUser || loggedInUser || ''}
                     onOpenShare={handleOpenShare}
-                    onUsernameChange={(u) => setAnalyzedUser(sanitizeChessHandle(u) || u)}
+                    onUsernameChange={(u) => {
+                      const clean = sanitizeChessHandle(u) || u.trim();
+                      if (clean) {
+                        setLoggedInUser(clean);
+                        setAnalyzedUser(clean);
+                        try {
+                          localStorage.setItem('chesspulse_user', clean);
+                        } catch {
+                          // safe fallback
+                        }
+                      }
+                    }}
                     onOpenProfileStats={() => setIsProfileStatsModalOpen(true)}
                   />
                 </ErrorBoundary>

@@ -13,11 +13,17 @@ import {
   UserCheck,
   User,
   ExternalLink,
+  BookOpen,
+  Database,
+  Award,
 } from 'lucide-react';
 import {
   fetchLivePlayerStats,
   fetchRealPlayerMatchesWithStatus,
+  scanAllTimePlayerArchives,
   LivePlayerStats,
+  AllTimeCareerScanProgress,
+  AllTimeCareerAggregate,
 } from '../services/chessComApi';
 import { analyzeMatchForDashboardFast } from '../services/pgnAnalyzer';
 import { ChessComMatch } from '../types/chess';
@@ -85,42 +91,287 @@ interface RealAnalyzedGamePoint {
   blunderMoves: number[];
 }
 
+const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
+  {
+    date: 'Oct 14',
+    endTime: 1728900000,
+    timeClass: 'blitz',
+    timeControlLabel: '3+0 Blitz',
+    elo: 1640,
+    accuracy: 81.4,
+    blunders: 1,
+    mistakes: 2,
+    opponent: 'TacticalWolf92',
+    opponentRating: 1628,
+    result: 'win',
+    openingAccuracy: 91.2,
+    middlegameAccuracy: 78.5,
+    endgameAccuracy: 82.0,
+    blunderMoves: [24],
+  },
+  {
+    date: 'Oct 16',
+    endTime: 1729072800,
+    timeClass: 'rapid',
+    timeControlLabel: '10+0 Rapid',
+    elo: 1658,
+    accuracy: 86.2,
+    blunders: 0,
+    mistakes: 1,
+    opponent: 'ViennaGambit_DE',
+    opponentRating: 1670,
+    result: 'win',
+    openingAccuracy: 94.0,
+    middlegameAccuracy: 83.6,
+    endgameAccuracy: 85.1,
+    blunderMoves: [],
+  },
+  {
+    date: 'Oct 19',
+    endTime: 1729332000,
+    timeClass: 'blitz',
+    timeControlLabel: '3+2 Blitz',
+    elo: 1649,
+    accuracy: 75.8,
+    blunders: 2,
+    mistakes: 2,
+    opponent: 'NordicKnight',
+    opponentRating: 1665,
+    result: 'loss',
+    openingAccuracy: 88.4,
+    middlegameAccuracy: 71.2,
+    endgameAccuracy: 74.0,
+    blunderMoves: [19, 31],
+  },
+  {
+    date: 'Oct 22',
+    endTime: 1729591200,
+    timeClass: 'bullet',
+    timeControlLabel: '1+0 Bullet',
+    elo: 1672,
+    accuracy: 83.9,
+    blunders: 1,
+    mistakes: 1,
+    opponent: 'ZurichTempo',
+    opponentRating: 1660,
+    result: 'win',
+    openingAccuracy: 92.1,
+    middlegameAccuracy: 80.4,
+    endgameAccuracy: 83.2,
+    blunderMoves: [27],
+  },
+  {
+    date: 'Oct 25',
+    endTime: 1729850400,
+    timeClass: 'rapid',
+    timeControlLabel: '10+0 Rapid',
+    elo: 1694,
+    accuracy: 88.7,
+    blunders: 0,
+    mistakes: 1,
+    opponent: 'CaroKannMaster',
+    opponentRating: 1688,
+    result: 'win',
+    openingAccuracy: 95.3,
+    middlegameAccuracy: 86.0,
+    endgameAccuracy: 87.9,
+    blunderMoves: [],
+  },
+  {
+    date: 'Oct 28',
+    endTime: 1730109600,
+    timeClass: 'blitz',
+    timeControlLabel: '3+0 Blitz',
+    elo: 1712,
+    accuracy: 85.4,
+    blunders: 0,
+    mistakes: 1,
+    opponent: 'SicilianStorm',
+    opponentRating: 1705,
+    result: 'draw',
+    openingAccuracy: 93.0,
+    middlegameAccuracy: 82.8,
+    endgameAccuracy: 84.5,
+    blunderMoves: [],
+  },
+  {
+    date: 'Oct 31',
+    endTime: 1730368800,
+    timeClass: 'blitz',
+    timeControlLabel: '3+0 Blitz',
+    elo: 1738,
+    accuracy: 90.6,
+    blunders: 0,
+    mistakes: 0,
+    opponent: 'BerlinWall_99',
+    opponentRating: 1724,
+    result: 'win',
+    openingAccuracy: 96.4,
+    middlegameAccuracy: 88.2,
+    endgameAccuracy: 90.1,
+    blunderMoves: [],
+  },
+  {
+    date: 'Nov 02',
+    endTime: 1730541600,
+    timeClass: 'rapid',
+    timeControlLabel: '10+0 Rapid',
+    elo: 1765,
+    accuracy: 92.1,
+    blunders: 0,
+    mistakes: 1,
+    opponent: 'AlpineGrandmaster',
+    opponentRating: 1752,
+    result: 'win',
+    openingAccuracy: 97.1,
+    middlegameAccuracy: 89.8,
+    endgameAccuracy: 91.4,
+    blunderMoves: [],
+  },
+];
+
+const SHOWCASE_DEMO_STATS: LivePlayerStats = {
+  username: 'ShowcaseDemo',
+  title: undefined,
+  countryCode: 'DE',
+  joinedTimestamp: 1640995200,
+  followers: 48,
+  rapid: { current: 1765, best: 1790, wins: 214, losses: 142, draws: 28, total: 384, winRatePct: 56 },
+  blitz: { current: 1738, best: 1760, wins: 412, losses: 318, draws: 44, total: 774, winRatePct: 53 },
+  bullet: { current: 1672, best: 1710, wins: 196, losses: 164, draws: 18, total: 378, winRatePct: 52 },
+  tacticsPeak: 2340,
+  totalWins: 822,
+  totalLosses: 624,
+  totalDraws: 90,
+  totalGames: 1536,
+  overallWinRatePct: 54,
+  overallDrawRatePct: 6,
+  overallLossRatePct: 40,
+  recentGames: [],
+};
+
+const SHOWCASE_DEMO_CAREER: AllTimeCareerAggregate = {
+  username: 'ShowcaseDemo',
+  totalGames: 1536,
+  processedArchives: 18,
+  totalArchives: 18,
+  overall: { games: 1536, wins: 822, draws: 90, losses: 624, winPct: 54, drawPct: 6, lossPct: 40 },
+  white: { games: 770, wins: 438, draws: 46, losses: 286, winPct: 57, drawPct: 6, lossPct: 37 },
+  black: { games: 766, wins: 384, draws: 44, losses: 338, winPct: 50, drawPct: 6, lossPct: 44 },
+  byTimeClass: {
+    rapid: { games: 384, wins: 214, draws: 28, losses: 142, winPct: 56, drawPct: 7, lossPct: 37 },
+    blitz: { games: 774, wins: 412, draws: 44, losses: 318, winPct: 53, drawPct: 6, lossPct: 41 },
+    bullet: { games: 378, wins: 196, draws: 18, losses: 164, winPct: 52, drawPct: 5, lossPct: 43 },
+    daily: { games: 0, wins: 0, draws: 0, losses: 0, winPct: 0, drawPct: 0, lossPct: 0 },
+  },
+  terminations: {
+    winsByCheckmate: 286,
+    winsByTimeout: 194,
+    winsByResignation: 342,
+    lossesByCheckmate: 198,
+    lossesByTimeout: 172,
+    lossesByResignation: 254,
+    drawsByRepetition: 42,
+    drawsByStalemateOrInsufficient: 37,
+    drawsByAgreement: 11,
+  },
+  topOpenings: [
+    {
+      eco: 'C50',
+      name: 'Italian Game: Giuoco Piano',
+      totalGames: 312,
+      white: { games: 198, wins: 121, draws: 12, losses: 65, winPct: 61, drawPct: 6, lossPct: 33 },
+      black: { games: 114, wins: 58, draws: 7, losses: 49, winPct: 51, drawPct: 6, lossPct: 43 },
+    },
+    {
+      eco: 'B12',
+      name: 'Caro-Kann Defense: Advance Variation',
+      totalGames: 264,
+      white: { games: 84, wins: 47, draws: 5, losses: 32, winPct: 56, drawPct: 6, lossPct: 38 },
+      black: { games: 180, wins: 99, draws: 11, losses: 70, winPct: 55, drawPct: 6, lossPct: 39 },
+    },
+    {
+      eco: 'D02',
+      name: 'London System',
+      totalGames: 218,
+      white: { games: 164, wins: 98, draws: 10, losses: 56, winPct: 60, drawPct: 6, lossPct: 34 },
+      black: { games: 54, wins: 26, draws: 4, losses: 24, winPct: 48, drawPct: 7, lossPct: 45 },
+    },
+    {
+      eco: 'B90',
+      name: 'Sicilian Defense: Najdorf Variation',
+      totalGames: 186,
+      white: { games: 76, wins: 41, draws: 4, losses: 31, winPct: 54, drawPct: 5, lossPct: 41 },
+      black: { games: 110, wins: 58, draws: 6, losses: 46, winPct: 53, drawPct: 5, lossPct: 42 },
+    },
+  ],
+  ratingTimeline: [],
+  allTimePeakRating: 1790,
+  peakTimeClass: 'Rapid',
+};
+
 interface PerformanceDashboardProps {
-  username?: string;
+  username?: string | null;
   loggedInUser?: string | null;
+  onConnectUsername?: (username: string) => void;
   onOpenLogin?: () => void;
   onExploreMatch?: () => void;
 }
 
 export function PerformanceDashboard({
-  username = 'Hikaru',
+  username = null,
   loggedInUser = null,
+  onConnectUsername,
   onOpenLogin,
   onExploreMatch,
 }: PerformanceDashboardProps) {
-  const activeHandle = (loggedInUser || username || 'hikaru').trim();
-  const isPersonalMode = Boolean(loggedInUser);
+  const connectedHandle = (loggedInUser || username || '').trim();
+  const isDemoMode = !connectedHandle;
+  const activeHandle = connectedHandle || 'ShowcaseDemo';
+  const isPersonalMode = Boolean(connectedHandle);
 
   const [modeFilter, setModeFilter] = useState<'all' | 'blitz' | 'rapid' | 'bullet'>('all');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  const [inlineHandleInput, setInlineHandleInput] = useState<string>('');
+  const [showInlineInput, setShowInlineInput] = useState<boolean>(false);
 
-  const [liveStats, setLiveStats] = useState<LivePlayerStats | null>(null);
-  const [analyzedPoints, setAnalyzedPoints] = useState<RealAnalyzedGamePoint[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [liveStats, setLiveStats] = useState<LivePlayerStats | null>(SHOWCASE_DEMO_STATS);
+  const [analyzedPoints, setAnalyzedPoints] = useState<RealAnalyzedGamePoint[]>(SHOWCASE_DEMO_POINTS);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Staged All-Time Career Scan State
+  const [careerProgress, setCareerProgress] = useState<AllTimeCareerScanProgress | null>(null);
+  const [careerAggregate, setCareerAggregate] = useState<AllTimeCareerAggregate | null>(
+    SHOWCASE_DEMO_CAREER
+  );
+
   useEffect(() => {
+    // When no username is connected yet, keep instant Showcase Demo data with zero network calls!
+    if (!connectedHandle) {
+      setLiveStats(SHOWCASE_DEMO_STATS);
+      setAnalyzedPoints(SHOWCASE_DEMO_POINTS);
+      setCareerAggregate(SHOWCASE_DEMO_CAREER);
+      setCareerProgress(null);
+      setFetchError(null);
+      setIsLoading(false);
+      return;
+    }
+
     let isCancelled = false;
+    const scanAbortController = new AbortController();
 
     async function loadRealPerformanceData() {
       setIsLoading(true);
       setFetchError(null);
       setHoveredPoint(null);
+      setCareerProgress(null);
+      setCareerAggregate(null);
 
       try {
         const [statsRes, matchesRes] = await Promise.all([
-          fetchLivePlayerStats(activeHandle),
-          fetchRealPlayerMatchesWithStatus(activeHandle),
+          fetchLivePlayerStats(connectedHandle),
+          fetchRealPlayerMatchesWithStatus(connectedHandle),
         ]);
 
         if (isCancelled) return;
@@ -128,7 +379,7 @@ export function PerformanceDashboard({
         if (statsRes.code === 'OK' && statsRes.data) {
           setLiveStats(statsRes.data);
         } else {
-          setFetchError(statsRes.errorMessage || `Could not load stats for @${activeHandle}`);
+          setFetchError(statsRes.errorMessage || `Could not load stats for @${connectedHandle}`);
         }
 
         // First populate quick summary points from statsRes.data.recentGames so the chart renders immediately
@@ -169,14 +420,14 @@ export function PerformanceDashboard({
           const chronological = [...rawMatches].sort((a, b) => a.endTime - b.endTime);
           const points: RealAnalyzedGamePoint[] = [];
 
-          // Process matches asynchronously in small non-blocking slices so input fields never freeze
+          // Process matches asynchronously in small non-blocking slices
           for (let i = 0; i < chronological.length; i++) {
             if (isCancelled) return;
             const match = chronological[i];
             const userSide = match.userColor === 'white' ? match.white : match.black;
             const oppSide = match.userColor === 'white' ? match.black : match.white;
 
-            const fastSummary = analyzeMatchForDashboardFast(match, activeHandle);
+            const fastSummary = analyzeMatchForDashboardFast(match, connectedHandle);
 
             points.push({
               date: match.dateFormatted,
@@ -208,9 +459,25 @@ export function PerformanceDashboard({
         } else if (!statsRes.data || statsRes.data.recentGames.length === 0) {
           setAnalyzedPoints([]);
         }
+
+        // Launch the Staged All-Time Career Archive Scanner in the background
+        if (!isCancelled && statsRes.code === 'OK') {
+          scanAllTimePlayerArchives(
+            connectedHandle,
+            (prog, agg) => {
+              if (!isCancelled) {
+                setCareerProgress(prog);
+                setCareerAggregate(agg);
+              }
+            },
+            scanAbortController.signal
+          ).catch(() => {
+            // Ignore abort/network errors during background career scan
+          });
+        }
       } catch {
         if (!isCancelled) {
-          setFetchError(`Unable to reach Chess.com archive for @${activeHandle}.`);
+          setFetchError(`Unable to reach Chess.com archive for @${connectedHandle}.`);
         }
       } finally {
         if (!isCancelled) {
@@ -222,8 +489,9 @@ export function PerformanceDashboard({
     loadRealPerformanceData();
     return () => {
       isCancelled = true;
+      scanAbortController.abort();
     };
-  }, [activeHandle]);
+  }, [connectedHandle]);
 
   // Filter real analyzed points by selected time control mode
   const filteredPoints = useMemo(() => {
@@ -232,7 +500,7 @@ export function PerformanceDashboard({
     return matching.length > 0 ? matching : analyzedPoints;
   }, [analyzedPoints, modeFilter]);
 
-  // Compute real aggregated metrics from liveStats + filteredPoints
+  // Compute real aggregated metrics from liveStats + filteredPoints + careerAggregate
   const metrics = useMemo(() => {
     const pts = filteredPoints;
     const count = pts.length;
@@ -242,7 +510,6 @@ export function PerformanceDashboard({
         ? Math.round((pts.reduce((s, p) => s + p.accuracy, 0) / count) * 10) / 10
         : 0;
 
-    // Compare second half of recent games vs first half for real accuracy trend
     const half = Math.max(1, Math.floor(count / 2));
     const firstHalfAcc =
       count >= 2
@@ -259,7 +526,6 @@ export function PerformanceDashboard({
     const blundersPerGame =
       count > 0 ? Math.round((totalBlunders / count) * 10) / 10 : 0;
 
-    // Real ELO progression across active points
     const latestElo =
       count > 0
         ? pts[count - 1].elo
@@ -269,12 +535,12 @@ export function PerformanceDashboard({
 
     const peakElo = Math.max(
       latestElo,
+      careerAggregate?.allTimePeakRating || 0,
       liveStats?.blitz.best || 0,
       liveStats?.rapid.best || 0,
       liveStats?.bullet.best || 0
     );
 
-    // Real phase accuracies
     const openingAcc =
       count > 0
         ? Math.round((pts.reduce((s, p) => s + p.openingAccuracy, 0) / count) * 10) / 10
@@ -288,7 +554,6 @@ export function PerformanceDashboard({
         ? Math.round((pts.reduce((s, p) => s + p.endgameAccuracy, 0) / count) * 10) / 10
         : 0;
 
-    // Real time control blunder distribution
     const blitzGames = analyzedPoints.filter((p) => p.timeClass === 'blitz');
     const rapidGames = analyzedPoints.filter((p) => p.timeClass === 'rapid');
     const bulletGames = analyzedPoints.filter((p) => p.timeClass === 'bullet');
@@ -324,7 +589,7 @@ export function PerformanceDashboard({
           ? Math.round((bulletBlunders / totalErrorsAll) * 100)
           : 0,
     };
-  }, [filteredPoints, analyzedPoints, liveStats]);
+  }, [filteredPoints, analyzedPoints, liveStats, careerAggregate]);
 
   // SVG Chart Geometry calculations from real data points
   const chartWidth = 640;
@@ -391,7 +656,9 @@ export function PerformanceDashboard({
       ? `${pathD} L ${points[points.length - 1].x} ${chartHeight - paddingY} L ${points[0].x} ${chartHeight - paddingY} Z`
       : '';
 
-  const winRateValue = liveStats
+  const winRateValue = careerAggregate && careerAggregate.totalGames > 0
+    ? `${careerAggregate.overall.winPct}%`
+    : liveStats
     ? `${liveStats.overallWinRatePct}%`
     : filteredPoints.length > 0
     ? `${Math.round((filteredPoints.filter((p) => p.result === 'win').length / filteredPoints.length) * 100)}%`
@@ -414,10 +681,12 @@ export function PerformanceDashboard({
             ) : (
               <>
                 <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Live Chess.com Telemetry • @{liveStats?.username || activeHandle}</span>
+                <span>Showcase Demo Profile • Connect Username to Load Real Stats</span>
               </>
             )}
-            {isLoading && <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin ml-1" />}
+            {(isLoading || careerProgress?.isScanning) && (
+              <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin ml-1" />
+            )}
           </div>
 
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
@@ -427,21 +696,55 @@ export function PerformanceDashboard({
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
             {isPersonalMode
-              ? `Authenticated personal telemetry for @${liveStats?.username || activeHandle} — computed directly from your real Chess.com games and the ChessPulse Tactical Heuristic Engine.`
-              : `Real-time tactical accuracy and ELO progression computed directly from @${liveStats?.username || activeHandle}'s official Chess.com archive.`}
+              ? `Authenticated personal telemetry for @${liveStats?.username || activeHandle} — computed directly from your complete Chess.com career archives and the ChessPulse MultiPV Engine.`
+              : `Showing instant showcase demo telemetry. Click "Load My Chess.com Account" or enter your username at the top of the page to load your real Chess.com archives.`}
           </p>
         </div>
 
-        {/* Right Controls: Mode Filter Tabs + Personal Sign-In CTA if guest */}
+        {/* Right Controls: Mode Filter Tabs + Prominent Load Account Button / Input */}
         <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-          {!isPersonalMode && onOpenLogin && (
+          {showInlineInput ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const clean = inlineHandleInput.trim().replace(/^@/, '');
+                if (clean && onConnectUsername) {
+                  onConnectUsername(clean);
+                  setShowInlineInput(false);
+                }
+              }}
+              className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border-2 border-emerald-600 shadow-sm"
+            >
+              <input
+                type="text"
+                value={inlineHandleInput}
+                onChange={(e) => setInlineHandleInput(e.target.value)}
+                placeholder="Chess.com username..."
+                autoFocus
+                className="px-2.5 py-1 text-xs font-semibold text-slate-900 bg-transparent focus:outline-none w-36 sm:w-44"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Load Stats
+              </button>
+            </form>
+          ) : (
             <button
               type="button"
-              onClick={onOpenLogin}
-              className="px-3.5 py-2 rounded-2xl bg-[#064E3B] hover:bg-emerald-900 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              onClick={() => {
+                setInlineHandleInput(connectedHandle);
+                setShowInlineInput(true);
+              }}
+              className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer shadow-sm ring-2 ring-emerald-500/20"
             >
               <User className="w-3.5 h-3.5" />
-              <span>Switch to My Personal Analysis</span>
+              <span>
+                {isDemoMode
+                  ? 'Load My Chess.com Account'
+                  : `Switch Account (@${liveStats?.username || activeHandle})`}
+              </span>
             </button>
           )}
 
@@ -474,6 +777,31 @@ export function PerformanceDashboard({
         </div>
       </div>
 
+      {/* Live Staged All-Time Career Archive Scanner Progress Bar */}
+      {careerProgress && (
+        <div className="mb-8 p-4 sm:p-5 rounded-3xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 font-bold text-emerald-300">
+              <Database
+                className={`w-4 h-4 text-emerald-400 ${
+                  careerProgress.isScanning ? 'animate-pulse' : ''
+                }`}
+              />
+              <span>{careerProgress.statusText}</span>
+            </div>
+            <span className="font-mono font-bold text-emerald-400 tabular-nums">
+              {careerProgress.percent}% ({careerProgress.processedArchives}/{careerProgress.totalArchives} Archives · {careerProgress.totalGamesAnalyzed.toLocaleString()} Games)
+            </span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-emerald-950 overflow-hidden border border-emerald-800/60">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-300 rounded-full"
+              style={{ width: `${Math.max(3, careerProgress.percent)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {fetchError && (
         <div className="mb-6 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">
           {fetchError}
@@ -489,7 +817,7 @@ export function PerformanceDashboard({
             metrics.accDelta >= 0 ? `+${metrics.accDelta}%` : `${metrics.accDelta}%`
           }
           isPositive={metrics.accDelta >= 0}
-          subtitle={`Audited across ${metrics.count} real PGN games`}
+          subtitle={`CAPS2 audited across ${metrics.count} PGN games`}
           icon={<Target className="w-4 h-4 text-emerald-600" />}
         />
         <MetricCard
@@ -504,26 +832,30 @@ export function PerformanceDashboard({
           title="Verified Win Rate"
           value={winRateValue}
           change={
-            liveStats
+            careerAggregate && careerAggregate.totalGames > 0
+              ? `${careerAggregate.overall.wins.toLocaleString()}W`
+              : liveStats
               ? `${liveStats.totalWins.toLocaleString()}W`
               : `${filteredPoints.filter((p) => p.result === 'win').length}W`
           }
-          isPositive={(liveStats?.overallWinRatePct ?? 50) >= 50}
+          isPositive={(careerAggregate?.overall.winPct ?? liveStats?.overallWinRatePct ?? 50) >= 50}
           subtitle={
-            liveStats
+            careerAggregate && careerAggregate.totalGames > 0
+              ? `${careerAggregate.overall.wins.toLocaleString()}W · ${careerAggregate.overall.draws.toLocaleString()}D · ${careerAggregate.overall.losses.toLocaleString()}L (${careerAggregate.totalGames.toLocaleString()} scanned)`
+              : liveStats
               ? `${liveStats.totalWins.toLocaleString()}W · ${liveStats.totalDraws.toLocaleString()}D · ${liveStats.totalLosses.toLocaleString()}L (${liveStats.totalGames.toLocaleString()} games)`
               : `From recent verified Chess.com archive`
           }
           icon={<Zap className="w-4 h-4 text-emerald-600" />}
         />
         <MetricCard
-          title="Live Rating & Delta"
+          title="Live Rating & Peak"
           value={metrics.latestElo ? `${metrics.latestElo}` : '—'}
           change={
             metrics.eloDelta >= 0 ? `+${metrics.eloDelta} pts` : `${metrics.eloDelta} pts`
           }
           isPositive={metrics.eloDelta >= 0}
-          subtitle={`Peak verified ELO: ${metrics.peakElo || '—'}`}
+          subtitle={`All-Time Peak ELO: ${metrics.peakElo || '—'}`}
           icon={<TrendingUp className="w-4 h-4 text-teal-600" />}
         />
       </div>
@@ -690,7 +1022,7 @@ export function PerformanceDashboard({
           <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-slate-400" />
-              Hover any match node to inspect real opponent, ELO rating, and centipawn accuracy.
+              Hover any match node to inspect real opponent, ELO rating, and CAPS2 accuracy.
             </span>
             {onExploreMatch && (
               <button
@@ -802,7 +1134,9 @@ export function PerformanceDashboard({
                     Blitz • {liveStats?.blitz.current ? `${liveStats.blitz.current} ELO` : 'Unrated'}
                   </span>
                   <span className="text-[10px] text-slate-500 tabular-nums">
-                    {liveStats
+                    {careerAggregate && careerAggregate.byTimeClass.blitz.games > 0
+                      ? `${careerAggregate.byTimeClass.blitz.games.toLocaleString()} games (${careerAggregate.byTimeClass.blitz.winPct}%W · ${careerAggregate.byTimeClass.blitz.drawPct}%D · ${careerAggregate.byTimeClass.blitz.lossPct}%L)`
+                      : liveStats
                       ? `${liveStats.blitz.total.toLocaleString()} games (${liveStats.blitz.winRatePct}% win rate)`
                       : 'Live blitz archive'}
                   </span>
@@ -819,7 +1153,9 @@ export function PerformanceDashboard({
                     Rapid • {liveStats?.rapid.current ? `${liveStats.rapid.current} ELO` : 'Unrated'}
                   </span>
                   <span className="text-[10px] text-slate-500 tabular-nums">
-                    {liveStats
+                    {careerAggregate && careerAggregate.byTimeClass.rapid.games > 0
+                      ? `${careerAggregate.byTimeClass.rapid.games.toLocaleString()} games (${careerAggregate.byTimeClass.rapid.winPct}%W · ${careerAggregate.byTimeClass.rapid.drawPct}%D · ${careerAggregate.byTimeClass.rapid.lossPct}%L)`
+                      : liveStats
                       ? `${liveStats.rapid.total.toLocaleString()} games (${liveStats.rapid.winRatePct}% win rate)`
                       : 'Live rapid archive'}
                   </span>
@@ -837,7 +1173,9 @@ export function PerformanceDashboard({
                     {liveStats?.bullet.current ? `${liveStats.bullet.current} ELO` : 'Unrated'}
                   </span>
                   <span className="text-[10px] text-slate-500 tabular-nums">
-                    {liveStats
+                    {careerAggregate && careerAggregate.byTimeClass.bullet.games > 0
+                      ? `${careerAggregate.byTimeClass.bullet.games.toLocaleString()} games (${careerAggregate.byTimeClass.bullet.winPct}%W · ${careerAggregate.byTimeClass.bullet.drawPct}%D · ${careerAggregate.byTimeClass.bullet.lossPct}%L)`
+                      : liveStats
                       ? `${liveStats.bullet.total.toLocaleString()} games (${liveStats.bullet.winRatePct}% win rate)`
                       : 'Live bullet archive'}
                   </span>
@@ -850,6 +1188,181 @@ export function PerformanceDashboard({
           </div>
         </div>
       </div>
+
+      {/* All-Time Career Deep Breakdown: Color Split, Termination Reasons & Opening Repertoire */}
+      {careerAggregate && careerAggregate.totalGames > 0 && (
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-7">
+          {/* Left 5 Cols: White vs Black W/D/L & Termination Breakdown */}
+          <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-200/90 shadow-sm space-y-5">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Award className="w-3.5 h-3.5 text-emerald-600" />
+                All-Time Color &amp; Termination Audit
+              </h4>
+              <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 tabular-nums">
+                {careerAggregate.totalGames.toLocaleString()} Games
+              </span>
+            </div>
+
+            {/* White vs Black W/D/L Bars */}
+            <div className="space-y-3">
+              {/* White Pieces */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-900">
+                  <span>♔ Playing as White ({careerAggregate.white.games.toLocaleString()})</span>
+                  <span className="font-mono text-[11px] tabular-nums">
+                    {careerAggregate.white.winPct}% W · {careerAggregate.white.drawPct}% D · {careerAggregate.white.lossPct}% L
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden flex">
+                  <div
+                    className="bg-emerald-500 h-full"
+                    style={{ width: `${careerAggregate.white.winPct}%` }}
+                  />
+                  <div
+                    className="bg-slate-400 h-full"
+                    style={{ width: `${careerAggregate.white.drawPct}%` }}
+                  />
+                  <div
+                    className="bg-rose-500 h-full"
+                    style={{ width: `${careerAggregate.white.lossPct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Black Pieces */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-900">
+                  <span>♚ Playing as Black ({careerAggregate.black.games.toLocaleString()})</span>
+                  <span className="font-mono text-[11px] tabular-nums">
+                    {careerAggregate.black.winPct}% W · {careerAggregate.black.drawPct}% D · {careerAggregate.black.lossPct}% L
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden flex">
+                  <div
+                    className="bg-emerald-500 h-full"
+                    style={{ width: `${careerAggregate.black.winPct}%` }}
+                  />
+                  <div
+                    className="bg-slate-400 h-full"
+                    style={{ width: `${careerAggregate.black.drawPct}%` }}
+                  />
+                  <div
+                    className="bg-rose-500 h-full"
+                    style={{ width: `${careerAggregate.black.lossPct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Termination Reasons Breakdown */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Match Termination Reasons (Wins vs Losses)
+              </span>
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-500 block">Checkmate</span>
+                  <span className="font-mono font-bold text-emerald-700 text-xs tabular-nums">
+                    {careerAggregate.terminations.winsByCheckmate.toLocaleString()}W
+                  </span>
+                  <span className="text-slate-300 mx-1">/</span>
+                  <span className="font-mono font-bold text-rose-600 text-xs tabular-nums">
+                    {careerAggregate.terminations.lossesByCheckmate.toLocaleString()}L
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-500 block">Timeout</span>
+                  <span className="font-mono font-bold text-emerald-700 text-xs tabular-nums">
+                    {careerAggregate.terminations.winsByTimeout.toLocaleString()}W
+                  </span>
+                  <span className="text-slate-300 mx-1">/</span>
+                  <span className="font-mono font-bold text-rose-600 text-xs tabular-nums">
+                    {careerAggregate.terminations.lossesByTimeout.toLocaleString()}L
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-500 block">Resignation</span>
+                  <span className="font-mono font-bold text-emerald-700 text-xs tabular-nums">
+                    {careerAggregate.terminations.winsByResignation.toLocaleString()}W
+                  </span>
+                  <span className="text-slate-300 mx-1">/</span>
+                  <span className="font-mono font-bold text-rose-600 text-xs tabular-nums">
+                    {careerAggregate.terminations.lossesByResignation.toLocaleString()}L
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right 7 Cols: Deep All-Time Opening Repertoire Table */}
+          <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-slate-200/90 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+                All-Time Opening Repertoire (ECO &amp; W/D/L% by Color)
+              </h4>
+              <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                Scanned across {careerAggregate.processedArchives}/{careerAggregate.totalArchives} Monthly Archives
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    <th className="py-2 pr-3">ECO &amp; Opening Name</th>
+                    <th className="py-2 px-2 text-right">Games</th>
+                    <th className="py-2 px-2 text-right">White W/D/L%</th>
+                    <th className="py-2 pl-2 text-right">Black W/D/L%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {careerAggregate.topOpenings.slice(0, 8).map((op, idx) => (
+                    <tr key={`${op.eco}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                            {op.eco}
+                          </span>
+                          <span className="font-semibold text-slate-800 truncate max-w-[230px]">
+                            {op.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono font-bold text-slate-900 tabular-nums">
+                        {op.totalGames.toLocaleString()}
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono text-[11px] tabular-nums">
+                        {op.white.games > 0 ? (
+                          <span>
+                            <strong className="text-emerald-700">{op.white.winPct}%</strong> /{' '}
+                            <span className="text-slate-500">{op.white.drawPct}%</span> /{' '}
+                            <span className="text-rose-600">{op.white.lossPct}%</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pl-2 text-right font-mono text-[11px] tabular-nums">
+                        {op.black.games > 0 ? (
+                          <span>
+                            <strong className="text-emerald-700">{op.black.winPct}%</strong> /{' '}
+                            <span className="text-slate-500">{op.black.drawPct}%</span> /{' '}
+                            <span className="text-rose-600">{op.black.lossPct}%</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

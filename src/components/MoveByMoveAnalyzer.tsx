@@ -12,7 +12,6 @@ import {
   Volume2,
   VolumeX,
   Zap,
-  Clock,
   Sparkles,
   Layers,
   Award,
@@ -22,13 +21,21 @@ import {
   ShieldAlert,
   Scale,
   Target,
-  AlertTriangle,
   Share2,
   FlaskConical,
+  Cpu,
+  BookOpen,
 } from 'lucide-react';
 import { FEATURED_MATCH_ANALYSIS } from '../data/matchAnalysisData';
-import { AnalyzedPly, MoveClassification, ChessComMatch, FullMatchAnalysis, TacticalPuzzle } from '../types/chess';
-import { EvalBadge } from './EvalBadge';
+import {
+  AnalyzedPly,
+  MoveClassification,
+  ChessComMatch,
+  FullMatchAnalysis,
+  TacticalPuzzle,
+  DeepAnalysisProgress,
+} from '../types/chess';
+import { EvalBadge, CLASSIFICATION_META } from './EvalBadge';
 import { ChesscomBoard } from './ChesscomBoard';
 import { RealMatchListFeed } from './RealMatchListFeed';
 import { AccuracyRing } from './AccuracyRing';
@@ -39,6 +46,7 @@ import {
   analyzePgnAsync,
   evaluatePositionMultiPly,
   enrichAnalysisWithCloudEval,
+  computeWinProbability,
 } from '../services/pgnAnalyzer';
 import { ShareData } from './ShareModal';
 
@@ -48,15 +56,20 @@ interface SandboxState {
   toSquare: string;
   notation: string;
   evalScore: string;
+  winProb: number;
   classification: MoveClassification;
   moveCount: number;
   history: string[];
   explanation: string;
 }
 
-function evaluateSandboxFen(chess: Chess): { pawns: number; pvLine: string } {
-  const res = evaluatePositionMultiPly(chess.fen(), 2);
-  return { pawns: res.pawns, pvLine: res.pvLine };
+function evaluateSandboxFen(chess: Chess): { pawns: number; winProb: number; pvLine: string } {
+  const res = evaluatePositionMultiPly(chess.fen(), 3);
+  return {
+    pawns: res.pawns,
+    winProb: computeWinProbability(res.cp, res.mate),
+    pvLine: res.pvLine,
+  };
 }
 
 interface MoveByMoveAnalyzerProps {
@@ -67,8 +80,66 @@ interface MoveByMoveAnalyzerProps {
   onOpenProfileStats?: () => void;
 }
 
+const SHOWCASE_DEMO_MATCHES: ChessComMatch[] = [
+  {
+    id: 'demo-match-1',
+    url: 'https://www.chess.com/games/hikaru-nakamura',
+    white: { username: 'ShowcasePlayer', rating: 1765, result: 'win' },
+    black: { username: 'AlpineGrandmaster', rating: 1752, result: 'checkmated' },
+    pgn: `[Event "Showcase Demo Rapid"]\n[White "ShowcasePlayer"]\n[Black "AlpineGrandmaster"]\n[Result "1-0"]\n[ECO "C50"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O a6 7. Re1 Ba7 8. h3 O-O 9. Nbd2 Ne7 10. Nf1 Ng6 11. Ng3 c6 12. Bb3 d5 13. exd5 Nxd5 14. Nxe5 Nxe5 15. Rxe5 Bxf2+ 16. Kxf2 Qf6+ 17. Rf5 Bxf5 18. Nxf5 Qxf5+ 19. Kg1 Rae8 20. Bd2 Ne3 21. Bxe3 Rxe3 22. d4 Rfe8 1-0`,
+    timeControl: '10+0 Rapid',
+    timeClass: 'rapid',
+    endTime: 1730541600,
+    dateFormatted: 'Nov 02',
+    userColor: 'white',
+    userWon: true,
+    userResultText: 'Won by checkmate',
+  },
+  {
+    id: 'demo-match-2',
+    url: 'https://www.chess.com/games/magnus-carlsen',
+    white: { username: 'BerlinWall_99', rating: 1724, result: 'resigned' },
+    black: { username: 'ShowcasePlayer', rating: 1738, result: 'win' },
+    pgn: `[Event "Showcase Demo Blitz"]\n[White "BerlinWall_99"]\n[Black "ShowcasePlayer"]\n[Result "0-1"]\n[ECO "B12"]\n\n1. e4 c6 2. d4 d5 3. e5 Bf5 4. Nf3 e6 5. Be2 Nd7 6. O-O Ne7 7. Nbd2 h6 8. Nb3 g5 9. Bd2 Bg7 10. Rc1 O-O 11. c4 dxc4 12. Bxc4 Nb6 13. Be2 Nbd5 14. Nc5 b6 15. Nb7 Qd7 16. Nd6 Bg6 0-1`,
+    timeControl: '3+0 Blitz',
+    timeClass: 'blitz',
+    endTime: 1730368800,
+    dateFormatted: 'Oct 31',
+    userColor: 'black',
+    userWon: true,
+    userResultText: 'Won by resignation',
+  },
+  {
+    id: 'demo-match-3',
+    url: 'https://www.chess.com/games/fabiano-caruana',
+    white: { username: 'ShowcasePlayer', rating: 1712, result: 'agreed' },
+    black: { username: 'SicilianStorm', rating: 1705, result: 'agreed' },
+    pgn: `[Event "Showcase Demo Blitz"]\n[White "ShowcasePlayer"]\n[Black "SicilianStorm"]\n[Result "1/2-1/2"]\n[ECO "D02"]\n\n1. d4 d5 2. Nf3 Nf6 3. Bf4 c5 4. e3 Nc6 5. Nbd2 e6 6. c3 Bd6 7. Bg3 O-O 8. Bd3 b6 9. Ne5 Bb7 10. f4 Ne7 11. Qf3 Nf5 12. Bf2 Be7 1/2-1/2`,
+    timeControl: '3+0 Blitz',
+    timeClass: 'blitz',
+    endTime: 1730109600,
+    dateFormatted: 'Oct 28',
+    userColor: 'white',
+    userWon: 'draw',
+    userResultText: 'Drawn by agreement',
+  },
+];
+
+const ORDERED_CLASSIFICATIONS: MoveClassification[] = [
+  'brilliant',
+  'great',
+  'best',
+  'excellent',
+  'good',
+  'book',
+  'inaccuracy',
+  'mistake',
+  'miss',
+  'blunder',
+];
+
 export function MoveByMoveAnalyzer({
-  initialUsername = 'Hikaru',
+  initialUsername = '',
   onPuzzlesGenerated,
   onOpenShare,
   onUsernameChange,
@@ -77,7 +148,7 @@ export function MoveByMoveAnalyzer({
   // Decoupled local username input state for lag-free typing
   const [usernameInput, setUsernameInput] = useState<string>(initialUsername);
   const [activeUsername, setActiveUsername] = useState<string>(initialUsername);
-  const [recentMatches, setRecentMatches] = useState<ChessComMatch[]>([]);
+  const [recentMatches, setRecentMatches] = useState<ChessComMatch[]>(SHOWCASE_DEMO_MATCHES);
   const [isLoadingMatches, setIsLoadingMatches] = useState<boolean>(false);
   const [matchErrorCode, setMatchErrorCode] = useState<ApiErrorCode | undefined>(undefined);
   const [matchErrorMessage, setMatchErrorMessage] = useState<string | undefined>(undefined);
@@ -91,6 +162,9 @@ export function MoveByMoveAnalyzer({
   const [playSpeed, setPlaySpeed] = useState<number>(1);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+
+  // Deep Engine Analysis live progress state
+  const [deepProgress, setDeepProgress] = useState<DeepAnalysisProgress | null>(null);
 
   // Interactive What-If Sandbox state when user drags/clicks legal moves on the board
   const [sandboxState, setSandboxState] = useState<SandboxState | null>(null);
@@ -114,6 +188,13 @@ export function MoveByMoveAnalyzer({
       userExplicitSearchRef.current = true;
       setUsernameInput(cleanProp);
       setActiveUsername(cleanProp);
+    } else if (!cleanProp && activeUsername) {
+      setUsernameInput('');
+      setActiveUsername('');
+      setRecentMatches(SHOWCASE_DEMO_MATCHES);
+      setMatchAnalysis(FEATURED_MATCH_ANALYSIS);
+      setActivePlyIndex(FEATURED_MATCH_ANALYSIS.plies.length - 1);
+      setSelectedMatch(null);
     }
   }, [initialUsername, activeUsername]);
 
@@ -124,7 +205,7 @@ export function MoveByMoveAnalyzer({
     };
   }, []);
 
-  // When a match is selected, analyze its PGN asynchronously in non-blocking chunks
+  // When a match is selected, analyze its PGN deeply and asynchronously with live progress updates
   const handleSelectMatch = (match: ChessComMatch, shouldScrollToBoard = true) => {
     analysisAbortRef.current?.abort();
     const controller = new AbortController();
@@ -151,7 +232,7 @@ export function MoveByMoveAnalyzer({
 
     analyzePgnAsync(
       match.pgn,
-      activeUsername,
+      activeUsername || match.white.username,
       {
         whiteName: match.white.username,
         whiteRating: match.white.rating,
@@ -166,8 +247,14 @@ export function MoveByMoveAnalyzer({
             ? '0-1'
             : '1/2-1/2',
         dateFormatted: match.dateFormatted,
+        matchUrl: match.url,
       },
-      controller.signal
+      controller.signal,
+      (prog) => {
+        if (!controller.signal.aborted) {
+          setDeepProgress(prog);
+        }
+      }
     )
       .then((analyzed) => {
         if (controller.signal.aborted) return;
@@ -178,26 +265,42 @@ export function MoveByMoveAnalyzer({
           onPuzzlesGenerated(analyzed.detectedPuzzles);
         }
 
-        // Enrich critical positions asynchronously with Lichess Cloud Evaluation
+        // Enrich critical positions asynchronously with Lichess Cloud Evaluation MultiPV=3
         return enrichAnalysisWithCloudEval(analyzed, controller.signal).then((enriched) => {
           if (enriched && !controller.signal.aborted) {
             setMatchAnalysis((current) => (current.id === analyzed.id ? enriched : current));
           }
+          if (!controller.signal.aborted) {
+            setTimeout(() => {
+              setDeepProgress((curr) => (curr && curr.percent >= 100 ? null : curr));
+            }, 1400);
+          }
         });
       })
       .catch(() => {
-        // Ignore aborted analysis
+        if (!controller.signal.aborted) {
+          setDeepProgress(null);
+        }
       });
   };
 
-  // Fetch real matches when username changes via server-side proxy
+  // Fetch real matches ONLY when a user account has been entered/connected
   useEffect(() => {
+    const cleanUser = activeUsername.trim();
+    if (!cleanUser) {
+      setRecentMatches(SHOWCASE_DEMO_MATCHES);
+      setIsLoadingMatches(false);
+      setMatchErrorCode(undefined);
+      setMatchErrorMessage(undefined);
+      return;
+    }
+
     let isCancelled = false;
     setIsLoadingMatches(true);
     setMatchErrorCode(undefined);
     setMatchErrorMessage(undefined);
 
-    fetchRealPlayerMatchesWithStatus(activeUsername)
+    fetchRealPlayerMatchesWithStatus(cleanUser)
       .then((result) => {
         if (isCancelled) return;
         setRecentMatches(result.matches);
@@ -205,8 +308,6 @@ export function MoveByMoveAnalyzer({
         setMatchErrorMessage(result.errorMessage);
         setIsLoadingMatches(false);
 
-        // Only auto-analyze the first match if the user explicitly searched a username;
-        // on initial page load, keep FEATURED_MATCH_ANALYSIS ready with 0ms main-thread work!
         if (result.matches.length > 0 && userExplicitSearchRef.current) {
           userExplicitSearchRef.current = false;
           handleSelectMatch(result.matches[0], false);
@@ -236,13 +337,13 @@ export function MoveByMoveAnalyzer({
   // Play audio on active move change
   const playMoveAudio = (ply: AnalyzedPly) => {
     if (isMuted) return;
-    if (ply.classification === 'brilliant') {
+    if (ply.classification === 'brilliant' || ply.classification === 'great') {
       chessAudio.playBrilliant();
-    } else if (ply.classification === 'best') {
+    } else if (ply.classification === 'best' || ply.classification === 'excellent') {
       chessAudio.playBest();
     } else if (ply.classification === 'blunder') {
       chessAudio.playBlunder();
-    } else if (ply.classification === 'mistake') {
+    } else if (ply.classification === 'mistake' || ply.classification === 'miss') {
       chessAudio.playMistake();
     } else if (ply.notation.includes('x')) {
       chessAudio.playCapture();
@@ -260,8 +361,8 @@ export function MoveByMoveAnalyzer({
   };
 
   /**
-   * Executes a legal move in the Interactive What-If Sandbox.
-   * Automatically handles pawn promotion to Queen ('q') so pawns never disappear on the 8th/1st rank.
+   * Executes a legal move in the Interactive What-If Sandbox and computes its real move classification
+   * so the move-evaluation badge renders at the top-right next to the moved piece.
    */
   const handleSandboxMove = (from: string, to: string) => {
     setIsPlaying(false);
@@ -271,6 +372,9 @@ export function MoveByMoveAnalyzer({
       'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
     try {
+      const beforeRes = evaluatePositionMultiPly(baseFen, 3);
+      const beforeWinProbWhite = computeWinProbability(beforeRes.cp, beforeRes.mate);
+
       const chess = new Chess(baseFen);
       const piece = chess.get(from as Square);
       if (!piece) return;
@@ -293,8 +397,36 @@ export function MoveByMoveAnalyzer({
       const formattedEval =
         newEvalNum > 0 ? `+${newEvalNum.toFixed(1)}` : newEvalNum.toFixed(1);
 
+      const isWhiteMove = moveObj.color === 'w';
+      const moverWinBefore = isWhiteMove ? beforeWinProbWhite : 100 - beforeWinProbWhite;
+      const moverWinAfter = isWhiteMove ? sandboxEval.winProb : 100 - sandboxEval.winProb;
+      const winLoss = Math.max(0, moverWinBefore - moverWinAfter);
+
+      const isEngineBest =
+        (beforeRes.bestMoveFrom === moveObj.from && beforeRes.bestMoveTo === moveObj.to) ||
+        beforeRes.bestMoveSan === moveObj.san;
+
+      let moveClass: MoveClassification = 'good';
+      if (isEngineBest || winLoss <= 1.5) {
+        moveClass = 'best';
+      } else if (winLoss <= 4.2) {
+        moveClass = 'excellent';
+      } else if (winLoss <= 8.0) {
+        moveClass = 'good';
+      } else if (winLoss <= 14.0) {
+        moveClass = 'inaccuracy';
+      } else if (winLoss <= 24.0) {
+        moveClass = 'mistake';
+      } else {
+        moveClass = 'blunder';
+      }
+
       if (!isMuted) {
-        if (chess.inCheck()) {
+        if (moveClass === 'blunder') {
+          chessAudio.playBlunder();
+        } else if (moveClass === 'mistake') {
+          chessAudio.playMistake();
+        } else if (chess.inCheck()) {
           chessAudio.playCheck();
         } else if (moveObj.captured) {
           chessAudio.playCapture();
@@ -310,11 +442,14 @@ export function MoveByMoveAnalyzer({
         toSquare: moveObj.to,
         notation: `${moveObj.color === 'w' ? 'White' : 'Black'}: ${moveObj.san}`,
         evalScore: formattedEval,
-        classification: 'best',
+        winProb: sandboxEval.winProb,
+        classification: moveClass,
         moveCount: nextHistory.length,
         history: nextHistory,
-        explanation: `What-If Sandbox continuation (${nextHistory.join(' → ')}). Live evaluation: ${formattedEval} pawns.${
-          sandboxEval.pvLine ? ` Best reply line: ${sandboxEval.pvLine}.` : ''
+        explanation: `What-If Sandbox continuation (${nextHistory.join(' → ')}). Evaluated as ${CLASSIFICATION_META[moveClass].label} (${formattedEval} pawns, Win%: ${sandboxEval.winProb.toFixed(
+          1
+        )}%).${
+          sandboxEval.pvLine ? ` Best continuation: ${sandboxEval.pvLine}.` : ''
         } Click "Reset to Match Line" to return to the recorded game.`,
       });
     } catch {
@@ -402,16 +537,24 @@ export function MoveByMoveAnalyzer({
     }
   };
 
-  // Convert eval score to percentage for eval bar
-  const getEvalBarHeight = (evalScore: string) => {
+  // Convert eval score or official Win% Sigmoid to percentage height for Live Evaluation Bar
+  const getEvalBarHeight = (evalScore: string, winProb?: number) => {
+    if (typeof winProb === 'number' && Number.isFinite(winProb)) {
+      return Math.max(4, Math.min(96, Math.round(winProb)));
+    }
+    if (evalScore.includes('M')) {
+      return evalScore.startsWith('-') ? 4 : 96;
+    }
     const num = parseFloat(evalScore.replace('+', ''));
     if (isNaN(num)) return 50;
-    const clamped = Math.max(-6, Math.min(6, num));
-    return Math.round(50 + (clamped / 6) * 40);
+    return Math.max(4, Math.min(96, Math.round(computeWinProbability(num * 100))));
   };
 
   const activeEvalScore = sandboxState?.evalScore || currentPly?.evalScore || '+0.2';
-  const evalHeight = getEvalBarHeight(activeEvalScore);
+  const evalHeight = getEvalBarHeight(
+    activeEvalScore,
+    sandboxState ? sandboxState.winProb : currentPly?.winProb
+  );
   const whiteAdvantagePct = evalHeight;
   const blackAdvantagePct = 100 - evalHeight;
   const displayedFen =
@@ -420,36 +563,47 @@ export function MoveByMoveAnalyzer({
     'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const activeTurnSide = (displayedFen.split(' ')[1] || 'w') === 'w' ? 'White' : 'Black';
 
+  const topPlayer = isFlipped ? matchAnalysis.whitePlayer : matchAnalysis.blackPlayer;
+  const bottomPlayer = isFlipped ? matchAnalysis.blackPlayer : matchAnalysis.whitePlayer;
+  const topPlayerAccuracy = isFlipped
+    ? matchAnalysis.accuracy.white
+    : matchAnalysis.accuracy.black;
+  const bottomPlayerAccuracy = isFlipped
+    ? matchAnalysis.accuracy.black
+    : matchAnalysis.accuracy.white;
+  const topPlayerColorLabel = isFlipped ? '♔ White' : '♚ Black';
+  const bottomPlayerColorLabel = isFlipped ? '♚ Black' : '♔ White';
+
   return (
     <div className="w-full space-y-7">
       {/* Search Header Bar: Real Chess.com Search + Free Credit System */}
       <div className="p-4 sm:p-5 bg-slate-50/90 rounded-2xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-4">
         {/* Username Search Box */}
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 max-w-md">
+        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 max-w-lg">
           <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 select-none">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-emerald-700 font-bold select-none">
               ♟
             </span>
             <input
               type="text"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
-              placeholder="Search Chess.com handle (e.g. Hikaru)..."
-              className="w-full pl-8 pr-3 py-2 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-600 font-medium text-slate-900 shadow-2xs"
+              placeholder="Enter your Chess.com username to load matches..."
+              className="w-full pl-8 pr-3 py-2.5 text-xs sm:text-sm bg-white border-2 border-emerald-600/70 rounded-xl focus:outline-none focus:border-emerald-600 font-semibold text-slate-900 shadow-2xs"
             />
           </div>
           <button
             type="submit"
-            className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap"
+            className="px-4 py-2.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ring-2 ring-emerald-500/20 whitespace-nowrap"
           >
             <Search className="w-3.5 h-3.5" />
-            <span>Fetch Matches</span>
+            <span>Load My Games &amp; Analyze</span>
           </button>
-          {onOpenProfileStats && (
+          {onOpenProfileStats && activeUsername && (
             <button
               type="button"
               onClick={onOpenProfileStats}
-              className="px-3 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+              className="px-3 py-2.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer whitespace-nowrap shadow-2xs"
               title={`View @${activeUsername} Live Stats`}
             >
               @{activeUsername} Stats
@@ -492,7 +646,11 @@ export function MoveByMoveAnalyzer({
             className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
           >
             <Swords className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Last 10 Games ({recentMatches.length})</span>
+            <span>
+              {activeUsername
+                ? `Last 10 Games (${recentMatches.length})`
+                : `Showcase Games (${recentMatches.length})`}
+            </span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isMatchFeedOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
@@ -517,12 +675,42 @@ export function MoveByMoveAnalyzer({
               isLoading={isLoadingMatches}
               errorCode={matchErrorCode}
               errorMessage={matchErrorMessage}
-              searchedUsername={activeUsername}
+              searchedUsername={activeUsername || 'Showcase Demo'}
               onQuickSelectUsername={(sampleHandle) => {
+                userExplicitSearchRef.current = true;
                 setUsernameInput(sampleHandle);
                 setActiveUsername(sampleHandle);
+                onUsernameChange?.(sampleHandle);
               }}
             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live Deep Engine Progress Banner (Take Your Time / MultiPV=3 Stockfish & Lichess Cloud) */}
+      <AnimatePresence>
+        {deepProgress && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="p-4 rounded-2xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-2.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-bold text-emerald-300">
+                <Cpu className="w-4 h-4 text-emerald-400 animate-spin" />
+                <span>{deepProgress.phaseLabel}</span>
+              </div>
+              <span className="font-mono font-bold text-emerald-400 tabular-nums">
+                {deepProgress.percent}% ({deepProgress.currentPly}/{deepProgress.totalPlies} Plies · Depth {deepProgress.depth} · MultiPV {deepProgress.multiPv})
+              </span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-emerald-950 overflow-hidden border border-emerald-800/60">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-200 rounded-full"
+                style={{ width: `${Math.max(4, deepProgress.percent)}%` }}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -539,10 +727,20 @@ export function MoveByMoveAnalyzer({
               <span className="text-slate-400 font-normal">vs</span>
               <span>{matchAnalysis.blackPlayer.name} ({matchAnalysis.blackPlayer.rating})</span>
             </div>
-            <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-slate-500 flex flex-wrap items-center gap-2 mt-0.5">
               <span>{matchAnalysis.event}</span>
               <span>•</span>
               <span className="font-semibold text-emerald-700">{matchAnalysis.result}</span>
+              {matchAnalysis.openingName && (
+                <>
+                  <span>•</span>
+                  <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                    <BookOpen className="w-3 h-3 text-amber-700" />
+                    {matchAnalysis.openingEco ? `${matchAnalysis.openingEco}: ` : ''}
+                    {matchAnalysis.openingName}
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -567,7 +765,7 @@ export function MoveByMoveAnalyzer({
               onClick={() =>
                 onOpenShare({
                   title: `${matchAnalysis.whitePlayer.name} vs ${matchAnalysis.blackPlayer.name}`,
-                  description: `Game Analysis (${matchAnalysis.event}): ${matchAnalysis.result}. Analyzed ${matchAnalysis.plies.length} plies with the ChessPulse Tactical Heuristic Engine.`,
+                  description: `Game Analysis (${matchAnalysis.event}): ${matchAnalysis.result}. Analyzed ${matchAnalysis.plies.length} plies with the ChessPulse MultiPV Engine.`,
                   type: 'match',
                 })
               }
@@ -586,12 +784,20 @@ export function MoveByMoveAnalyzer({
         {/* Left Column (lg:col-span-8): Eval Bar, Board, Sandbox Bar, Toolbar */}
         <div className="lg:col-span-8 space-y-4">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            {/* Live Evaluation Bar (Advantage Bar) */}
+            {/* Live Evaluation Bar (Win% Sigmoid + Centipawn / Mate Indicator — Rotates with Board Flip) */}
             <div className="flex sm:flex-col items-center gap-2 order-2 sm:order-1">
-              <div className="relative w-48 sm:w-6 h-5 sm:h-96 bg-[#262421] rounded-full overflow-hidden flex sm:flex-col justify-end p-0.5 border-2 border-slate-700 shadow-xl">
-                {/* Black Side Percentage Indicator (Top) */}
-                <span className="hidden sm:block absolute top-2 left-0 right-0 text-center font-mono text-[9px] font-bold text-slate-300 select-none z-10 tabular-nums">
-                  {blackAdvantagePct}%
+              <div
+                className={`relative w-48 sm:w-6 h-5 sm:h-96 bg-[#262421] rounded-full overflow-hidden flex sm:flex-col ${
+                  isFlipped ? 'justify-start' : 'justify-end'
+                } p-0.5 border-2 border-slate-700 shadow-xl`}
+              >
+                {/* Top Side Win% Indicator */}
+                <span
+                  className={`hidden sm:block absolute top-2 left-0 right-0 text-center font-mono text-[9px] font-bold select-none z-10 tabular-nums ${
+                    isFlipped ? 'text-slate-700' : 'text-slate-300'
+                  }`}
+                >
+                  {isFlipped ? `${whiteAdvantagePct}%` : `${blackAdvantagePct}%`}
                 </span>
 
                 {/* White Smooth Advantage Height Bar */}
@@ -603,20 +809,38 @@ export function MoveByMoveAnalyzer({
                   }}
                 />
 
-                {/* White Side Percentage Indicator (Bottom) */}
-                <span className="hidden sm:block absolute bottom-2 left-0 right-0 text-center font-mono text-[9px] font-bold text-slate-700 select-none z-10 tabular-nums">
-                  {whiteAdvantagePct}%
+                {/* Bottom Side Win% Indicator */}
+                <span
+                  className={`hidden sm:block absolute bottom-2 left-0 right-0 text-center font-mono text-[9px] font-bold select-none z-10 tabular-nums ${
+                    isFlipped ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                >
+                  {isFlipped ? `${blackAdvantagePct}%` : `${whiteAdvantagePct}%`}
                 </span>
               </div>
 
-              {/* Exact Stockfish Numeric Value */}
+              {/* Exact Stockfish / Sigmoid Numeric Value */}
               <div className="text-center font-mono text-xs font-bold text-slate-800 tabular-nums bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
                 {activeEvalScore}
               </div>
             </div>
 
-            {/* Pixel-Perfect Chess.com Board Component with Interactive What-If Sandbox */}
-            <div className="order-1 sm:order-2 w-full flex justify-center">
+            {/* Pixel-Perfect Tournament Green/Ivory Chessboard Component with Top/Bottom Player Strips */}
+            <div className="order-1 sm:order-2 w-full flex flex-col items-center gap-2">
+              {/* Top Player Orientation Bar */}
+              <div className="w-full max-w-[720px] flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                <div className="flex items-center gap-2 font-bold text-slate-800">
+                  <span className="px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-mono text-[11px]">
+                    {topPlayerColorLabel}
+                  </span>
+                  <span>{topPlayer.name}</span>
+                  <span className="font-mono text-slate-500 tabular-nums">({topPlayer.rating})</span>
+                </div>
+                <span className="font-mono text-[11px] font-bold text-emerald-700 tabular-nums">
+                  CAPS2: {topPlayerAccuracy}%
+                </span>
+              </div>
+
               <ChesscomBoard
                 fen={displayedFen}
                 fromSquare={sandboxState?.fromSquare || currentPly?.fromSquare}
@@ -627,6 +851,20 @@ export function MoveByMoveAnalyzer({
                 allowedTurnColor={null}
                 onMovePlayed={handleSandboxMove}
               />
+
+              {/* Bottom Player Orientation Bar */}
+              <div className="w-full max-w-[720px] flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                <div className="flex items-center gap-2 font-bold text-slate-800">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono text-[11px]">
+                    {bottomPlayerColorLabel}
+                  </span>
+                  <span>{bottomPlayer.name}</span>
+                  <span className="font-mono text-slate-500 tabular-nums">({bottomPlayer.rating})</span>
+                </div>
+                <span className="font-mono text-[11px] font-bold text-emerald-700 tabular-nums">
+                  CAPS2: {bottomPlayerAccuracy}%
+                </span>
+              </div>
             </div>
           </div>
 
@@ -766,13 +1004,19 @@ export function MoveByMoveAnalyzer({
                 {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
               </button>
 
-              {/* Flip Board Perspective */}
+              {/* Dedicated Flip Board Button */}
               <button
+                type="button"
                 onClick={() => setIsFlipped((prev) => !prev)}
-                className="p-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer transition-colors"
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs ${
+                  isFlipped
+                    ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                    : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-800'
+                }`}
                 title="Flip Board Perspective (White / Black)"
               >
-                <Layers className="w-3.5 h-3.5" />
+                <RotateCcw className={`w-3.5 h-3.5 transition-transform duration-300 ${isFlipped ? 'rotate-180' : ''}`} />
+                <span>Flip Board ({isFlipped ? 'Black' : 'White'})</span>
               </button>
             </div>
           </div>
@@ -791,8 +1035,8 @@ export function MoveByMoveAnalyzer({
               className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3"
             >
               {/* Card Header with Official Badge */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold text-slate-900">
                     {sandboxState ? sandboxState.notation : currentPly?.notation}
                   </span>
@@ -805,10 +1049,22 @@ export function MoveByMoveAnalyzer({
                       <EvalBadge classification={currentPly.classification} size="sm" />
                     )
                   )}
+                  {!sandboxState && currentPly?.outOfBook && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                      Out of Book
+                    </span>
+                  )}
                 </div>
-                <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 tabular-nums">
-                  Eval: {activeEvalScore}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {!sandboxState && typeof currentPly?.moveAccuracy === 'number' && (
+                    <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 tabular-nums">
+                      CAPS2: {currentPly.moveAccuracy.toFixed(1)}%
+                    </span>
+                  )}
+                  <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 tabular-nums">
+                    Eval: {activeEvalScore}
+                  </span>
+                </div>
               </div>
 
               {/* Crystal-clear Human Language Explanation */}
@@ -816,11 +1072,12 @@ export function MoveByMoveAnalyzer({
                 {sandboxState ? sandboxState.explanation : currentPly?.explanation}
               </p>
 
-              {/* Tactical Delta Details, Best Alternative & Principal Variation */}
+              {/* Tactical Delta Details, Best Alternative, & MultiPV=3 Engine Lines */}
               {!sandboxState &&
                 (currentPly?.evalDelta ||
                   currentPly?.bestAlternative ||
                   currentPly?.pvLine ||
+                  (currentPly?.multiPv && currentPly.multiPv.length > 0) ||
                   currentPly?.tacticalThreat) && (
                   <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs">
                     {currentPly.evalDelta && (
@@ -832,6 +1089,15 @@ export function MoveByMoveAnalyzer({
                           }`}
                         >
                           {currentPly.evalDelta} Swing
+                        </span>
+                      </div>
+                    )}
+
+                    {typeof currentPly.winProbLoss === 'number' && currentPly.winProbLoss > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-medium">Win-Probability Loss:</span>
+                        <span className="font-mono font-bold text-slate-800 tabular-nums">
+                          -{currentPly.winProbLoss.toFixed(1)}% Win%
                         </span>
                       </div>
                     )}
@@ -848,11 +1114,38 @@ export function MoveByMoveAnalyzer({
                     {currentPly.pvLine && (
                       <div className="text-slate-800 flex flex-col gap-1 pt-0.5">
                         <span className="text-[11px] font-semibold text-slate-500">
-                          Principal Variation (PV):
+                          Best Continuation (PV1):
                         </span>
                         <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90">
                           {currentPly.pvLine}
                         </span>
+                      </div>
+                    )}
+
+                    {currentPly.multiPv && currentPly.multiPv.length > 1 && (
+                      <div className="pt-1 border-t border-slate-200/70 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                          MultiPV Candidate Lines (Depth {currentPly.engineDepth || 18})
+                        </span>
+                        {currentPly.multiPv.slice(0, 3).map((cand) => (
+                          <div
+                            key={cand.multipv}
+                            className="flex items-center justify-between gap-2 text-[11px] font-mono bg-white px-2 py-1 rounded border border-slate-200/70"
+                          >
+                            <span className="truncate text-slate-700">
+                              <strong className="text-emerald-700">PV{cand.multipv}:</strong>{' '}
+                              {cand.pvLine || cand.bestMoveSan}
+                            </span>
+                            <span className="text-slate-500 shrink-0 tabular-nums">
+                              {cand.mate
+                                ? `M${Math.abs(cand.mate)}`
+                                : cand.pawns >= 0
+                                ? `+${cand.pawns.toFixed(1)}`
+                                : cand.pawns.toFixed(1)}{' '}
+                              ({cand.winProb.toFixed(0)}%)
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -884,6 +1177,7 @@ export function MoveByMoveAnalyzer({
             >
               {matchAnalysis.plies.map((ply, idx) => {
                 const isActive = activePlyIndex === idx && !sandboxState;
+                const meta = CLASSIFICATION_META[ply.classification] || CLASSIFICATION_META.good;
                 return (
                   <button
                     key={idx}
@@ -904,19 +1198,8 @@ export function MoveByMoveAnalyzer({
                           {ply.notation}
                         </span>
                         <span className="text-[11px] text-slate-500 font-normal hidden sm:inline">
-                          {ply.classification === 'blunder'
-                            ? 'Critical blunder'
-                            : ply.classification === 'brilliant'
-                            ? 'Brilliant sacrifice'
-                            : ply.classification === 'mistake'
-                            ? 'Tactical mistake'
-                            : ply.classification === 'inaccuracy'
-                            ? 'Inaccuracy'
-                            : ply.classification === 'book'
-                            ? 'Opening book'
-                            : ply.classification === 'good'
-                            ? 'Solid practical move'
-                            : 'Top engine move'}
+                          {ply.outOfBook ? 'Out of Book • ' : ''}
+                          {meta.label}
                         </span>
                       </div>
                     </div>
@@ -960,7 +1243,9 @@ export function MoveByMoveAnalyzer({
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Evaluation Engine</div>
-                <div className="text-xs font-mono font-bold text-emerald-400">ChessPulse Tactical Heuristic Engine</div>
+                <div className="text-xs font-mono font-bold text-emerald-400">
+                  Stockfish MultiPV=3 + Lichess Cloud
+                </div>
               </div>
             </div>
           </div>
@@ -1113,7 +1398,7 @@ export function MoveByMoveAnalyzer({
         </div>
       )}
 
-      {/* Simplified Apple/Stripe-Standard Match Performance Summary (Essential Data Only) */}
+      {/* Apple/Stripe-Standard Match Performance Summary (CAPS2 Accuracy + Game Performance Rating + 10-Tier Classification) */}
       <div className="p-6 md:p-8 bg-white rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
           <div className="space-y-1">
@@ -1122,7 +1407,7 @@ export function MoveByMoveAnalyzer({
                 <Award className="w-4 h-4" />
               </span>
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                Match Performance Executive Summary
+                Match Performance Executive Summary (1:1 CAPS2 & Win% Sigmoid)
               </span>
             </div>
             <h4 className="text-lg font-bold text-slate-900 tracking-tight">
@@ -1130,7 +1415,12 @@ export function MoveByMoveAnalyzer({
             </h4>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium">
+            {matchAnalysis.performanceRating && (
+              <span className="px-2.5 py-1 rounded-full bg-slate-900 text-white font-mono font-bold">
+                Perf Rating: W {matchAnalysis.performanceRating.white} · B {matchAnalysis.performanceRating.black}
+              </span>
+            )}
             <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">
               {matchAnalysis.timeControl || 'Standard'}
             </span>
@@ -1141,82 +1431,84 @@ export function MoveByMoveAnalyzer({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-          {/* Column 1: Accurate Tactical Accuracy Rings */}
+          {/* Column 1: Accurate Tactical Accuracy Rings & Performance Ratings */}
           <div className="p-5 bg-slate-50/70 rounded-2xl border border-slate-200/70 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Accuracy Metrics
+                CAPS2 Accuracy
               </span>
               <span className="text-[11px] font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-slate-200">
-                Hybrid Cloud + Alpha-Beta
+                MultiPV=3 Engine
               </span>
             </div>
 
             <div className="flex items-center justify-around pt-2">
-              <AccuracyRing
-                score={matchAnalysis.accuracy.white}
-                label={matchAnalysis.whitePlayer.name}
-                sublabel="White"
-                color="#059669"
-                size={86}
-              />
-              <AccuracyRing
-                score={matchAnalysis.accuracy.black}
-                label={matchAnalysis.blackPlayer.name}
-                sublabel="Black"
-                color="#26C281"
-                size={86}
-              />
+              <div className="text-center space-y-1.5">
+                <AccuracyRing
+                  score={matchAnalysis.accuracy.white}
+                  label={matchAnalysis.whitePlayer.name}
+                  sublabel="White"
+                  color="#059669"
+                  size={86}
+                />
+                {matchAnalysis.performanceRating && (
+                  <div className="text-[11px] font-mono font-bold text-slate-700">
+                    Perf: {matchAnalysis.performanceRating.white} ELO
+                  </div>
+                )}
+              </div>
+              <div className="text-center space-y-1.5">
+                <AccuracyRing
+                  score={matchAnalysis.accuracy.black}
+                  label={matchAnalysis.blackPlayer.name}
+                  sublabel="Black"
+                  color="#26C281"
+                  size={86}
+                />
+                {matchAnalysis.performanceRating && (
+                  <div className="text-[11px] font-mono font-bold text-slate-700">
+                    Perf: {matchAnalysis.performanceRating.black} ELO
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Column 2: Move Classification Breakdown */}
+          {/* Column 2: Complete 10-Category Chess.com Move Classification Breakdown */}
           <div className="p-5 bg-slate-50/70 rounded-2xl border border-slate-200/70 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Engine Annotations
+                10-Tier Move Classification
               </span>
               <span className="text-[11px] text-slate-500 tabular-nums">
                 {matchAnalysis.plies.length} Half-Moves
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
-              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-emerald-700">
-                  <span>★</span> Best / Good
-                </span>
-                <span className="font-mono font-bold text-slate-800 tabular-nums">
-                  {matchAnalysis.plies.filter(m => m.classification === 'best' || m.classification === 'good' || m.classification === 'brilliant').length}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-amber-600">
-                  <span>?!</span> Inaccuracies
-                </span>
-                <span className="font-mono font-bold text-slate-800 tabular-nums">
-                  {matchAnalysis.plies.filter(m => m.classification === 'inaccuracy').length}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-orange-600">
-                  <span>?</span> Mistakes
-                </span>
-                <span className="font-mono font-bold text-slate-800 tabular-nums">
-                  {matchAnalysis.plies.filter(m => m.classification === 'mistake').length}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-rose-600">
-                  <span>??</span> Blunders
-                </span>
-                <span className="font-mono font-bold text-slate-800 tabular-nums">
-                  {matchAnalysis.plies.filter(m => m.classification === 'blunder').length}
-                </span>
-              </div>
+            <div className="grid grid-cols-2 gap-1.5 pt-1 text-xs">
+              {ORDERED_CLASSIFICATIONS.map((cls) => {
+                const meta = CLASSIFICATION_META[cls];
+                const count = matchAnalysis.plies.filter((m) => m.classification === cls).length;
+                return (
+                  <div
+                    key={cls}
+                    className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px]">
+                      <span
+                        className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[9px] font-extrabold shrink-0"
+                        style={{ backgroundColor: meta.hexBg, color: meta.textColorOnCircle }}
+                      >
+                        {meta.symbol}
+                      </span>
+                      <span>{meta.label}</span>
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 tabular-nums text-[11px]">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
