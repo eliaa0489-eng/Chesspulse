@@ -5,7 +5,18 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'vercel-protection-cookie-compat',
+        transformIndexHtml(html) {
+          return html
+            .replace(/<script type="module" crossorigin src="\/assets\//g, '<script type="module" src="/assets/')
+            .replace(/<link rel="stylesheet" crossorigin href="\/assets\//g, '<link rel="stylesheet" href="/assets/');
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -21,6 +32,7 @@ export default defineConfig(() => {
     build: {
       target: 'es2022',
       cssMinify: true,
+      modulePreload: false,
       rollupOptions: {
         output: {
           manualChunks: {
