@@ -19,7 +19,7 @@ import {
   fetchRealPlayerMatchesWithStatus,
   LivePlayerStats,
 } from '../services/chessComApi';
-import { parseAndAnalyzePgn } from '../services/pgnAnalyzer';
+import { analyzeMatchForDashboardFast } from '../services/pgnAnalyzer';
 import { ChessComMatch } from '../types/chess';
 
 interface MetricCardProps {
@@ -131,68 +131,12 @@ export function PerformanceDashboard({
           setFetchError(statsRes.errorMessage || `Could not load stats for @${activeHandle}`);
         }
 
-        const rawMatches: ChessComMatch[] =
-          matchesRes.code === 'OK' ? matchesRes.matches : [];
-
-        if (rawMatches.length > 0) {
-          // Sort chronologically (oldest -> newest) for the progression diagram
-          const chronological = [...rawMatches].sort((a, b) => a.endTime - b.endTime);
-
-          const points: RealAnalyzedGamePoint[] = chronological.map((match) => {
-            const userSide = match.userColor === 'white' ? match.white : match.black;
-            const oppSide = match.userColor === 'white' ? match.black : match.white;
-            const analysis = parseAndAnalyzePgn(match.pgn, activeHandle, {
-              whiteName: match.white.username,
-              whiteRating: match.white.rating,
-              blackName: match.black.username,
-              blackRating: match.black.rating,
-              timeControl: match.timeControl,
-              dateFormatted: match.dateFormatted,
-            });
-
-            const userPlies = analysis.plies.filter((p) => p.color === match.userColor);
-            const blundersCount = userPlies.filter((p) => p.classification === 'blunder').length;
-            const mistakesCount = userPlies.filter((p) => p.classification === 'mistake').length;
-            const blunderMoves = userPlies
-              .filter((p) => p.classification === 'blunder' || p.classification === 'mistake')
-              .map((p) => p.moveNumber);
-
-            const matchAcc =
-              match.userColor === 'white'
-                ? analysis.accuracy.white
-                : analysis.accuracy.black;
-
-            const openAcc = analysis.coachReport?.phaseBreakdown.opening.accuracy ?? matchAcc;
-            const midAcc = analysis.coachReport?.phaseBreakdown.middlegame.accuracy ?? matchAcc;
-            const endAcc = analysis.coachReport?.phaseBreakdown.endgame.accuracy ?? matchAcc;
-
-            return {
-              date: match.dateFormatted,
-              endTime: match.endTime,
-              timeClass: match.timeClass || 'blitz',
-              timeControlLabel: match.timeControl,
-              elo: userSide.rating,
-              accuracy: matchAcc,
-              blunders: blundersCount,
-              mistakes: mistakesCount,
-              opponent: oppSide.username,
-              opponentRating: oppSide.rating,
-              result:
-                match.userWon === true ? 'win' : match.userWon === 'draw' ? 'draw' : 'loss',
-              openingAccuracy: openAcc,
-              middlegameAccuracy: midAcc,
-              endgameAccuracy: endAcc,
-              blunderMoves,
-            };
-          });
-
-          setAnalyzedPoints(points);
-        } else if (statsRes.data && statsRes.data.recentGames.length > 0) {
-          // Fallback to real recentGames summary from /stats endpoint if PGN list was empty
-          const chronological = [...statsRes.data.recentGames].sort(
+        // First populate quick summary points from statsRes.data.recentGames so the chart renders immediately
+        if (statsRes.data && statsRes.data.recentGames.length > 0) {
+          const quickChronological = [...statsRes.data.recentGames].sort(
             (a, b) => a.endTime - b.endTime
           );
-          const points: RealAnalyzedGamePoint[] = chronological.map((g) => {
+          const quickPoints: RealAnalyzedGamePoint[] = quickChronological.map((g) => {
             const d = g.endTime ? new Date(g.endTime * 1000) : new Date();
             const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             const computedAcc = g.accuracy ?? (g.result === 'win' ? 86 : g.result === 'draw' ? 81 : 74);
@@ -200,7 +144,7 @@ export function PerformanceDashboard({
               date: label,
               endTime: g.endTime,
               timeClass: (g.timeClass as RealAnalyzedGamePoint['timeClass']) || 'blitz',
-              timeControlLabel: g.timeClass.toUpperCase(),
+              timeControlLabel: (g.timeClass || 'blitz').toUpperCase(),
               elo: g.userRating,
               accuracy: computedAcc,
               blunders: g.result === 'loss' ? 2 : g.result === 'draw' ? 1 : 0,
@@ -214,8 +158,54 @@ export function PerformanceDashboard({
               blunderMoves: [],
             };
           });
-          setAnalyzedPoints(points);
-        } else {
+          setAnalyzedPoints(quickPoints);
+          setIsLoading(false);
+        }
+
+        const rawMatches: ChessComMatch[] =
+          matchesRes.code === 'OK' ? matchesRes.matches : [];
+
+        if (rawMatches.length > 0) {
+          const chronological = [...rawMatches].sort((a, b) => a.endTime - b.endTime);
+          const points: RealAnalyzedGamePoint[] = [];
+
+          // Process matches asynchronously in small non-blocking slices so input fields never freeze
+          for (let i = 0; i < chronological.length; i++) {
+            if (isCancelled) return;
+            const match = chronological[i];
+            const userSide = match.userColor === 'white' ? match.white : match.black;
+            const oppSide = match.userColor === 'white' ? match.black : match.white;
+
+            const fastSummary = analyzeMatchForDashboardFast(match, activeHandle);
+
+            points.push({
+              date: match.dateFormatted,
+              endTime: match.endTime,
+              timeClass: match.timeClass || 'blitz',
+              timeControlLabel: match.timeControl,
+              elo: userSide.rating,
+              accuracy: fastSummary.accuracy,
+              blunders: fastSummary.blunders,
+              mistakes: fastSummary.mistakes,
+              opponent: oppSide.username,
+              opponentRating: oppSide.rating,
+              result:
+                match.userWon === true ? 'win' : match.userWon === 'draw' ? 'draw' : 'loss',
+              openingAccuracy: fastSummary.openingAccuracy,
+              middlegameAccuracy: fastSummary.middlegameAccuracy,
+              endgameAccuracy: fastSummary.endgameAccuracy,
+              blunderMoves: fastSummary.blunderMoves,
+            });
+
+            if ((i + 1) % 3 === 0) {
+              await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            }
+          }
+
+          if (!isCancelled) {
+            setAnalyzedPoints(points);
+          }
+        } else if (!statsRes.data || statsRes.data.recentGames.length === 0) {
           setAnalyzedPoints([]);
         }
       } catch {

@@ -36,7 +36,7 @@ import { PaywallModal } from './PaywallModal';
 import { chessAudio } from '../services/chessSound';
 import { fetchRealPlayerMatchesWithStatus, ApiErrorCode } from '../services/chessComApi';
 import {
-  parseAndAnalyzePgn,
+  analyzePgnAsync,
   evaluatePositionMultiPly,
   enrichAnalysisWithCloudEval,
 } from '../services/pgnAnalyzer';
@@ -74,7 +74,7 @@ export function MoveByMoveAnalyzer({
   onUsernameChange,
   onOpenProfileStats,
 }: MoveByMoveAnalyzerProps) {
-  // Username search state
+  // Decoupled local username input state for lag-free typing
   const [usernameInput, setUsernameInput] = useState<string>(initialUsername);
   const [activeUsername, setActiveUsername] = useState<string>(initialUsername);
   const [recentMatches, setRecentMatches] = useState<ChessComMatch[]>([]);
@@ -84,7 +84,7 @@ export function MoveByMoveAnalyzer({
   const [selectedMatch, setSelectedMatch] = useState<ChessComMatch | null>(null);
   const [isMatchFeedOpen, setIsMatchFeedOpen] = useState<boolean>(true);
 
-  // Active match analysis state (initialized with featured match or parsed match)
+  // Active match analysis state (initialized with instant pre-computed featured match)
   const [matchAnalysis, setMatchAnalysis] = useState<FullMatchAnalysis>(FEATURED_MATCH_ANALYSIS);
   const [activePlyIndex, setActivePlyIndex] = useState<number>(FEATURED_MATCH_ANALYSIS.plies.length - 1);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -102,16 +102,93 @@ export function MoveByMoveAnalyzer({
 
   const activeMoveRowRef = useRef<HTMLButtonElement | null>(null);
   const moveFeedContainerRef = useRef<HTMLDivElement | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const userExplicitSearchRef = useRef<boolean>(false);
 
   const currentPly: AnalyzedPly = matchAnalysis.plies[activePlyIndex] || matchAnalysis.plies[0];
 
-  // Sync with prop updates
+  // Sync with prop updates when user searches from HeroSection or Navbar
   useEffect(() => {
-    if (initialUsername && initialUsername !== activeUsername) {
-      setUsernameInput(initialUsername);
-      setActiveUsername(initialUsername);
+    const cleanProp = (initialUsername || '').trim();
+    if (cleanProp && cleanProp.toLowerCase() !== activeUsername.toLowerCase()) {
+      userExplicitSearchRef.current = true;
+      setUsernameInput(cleanProp);
+      setActiveUsername(cleanProp);
     }
-  }, [initialUsername]);
+  }, [initialUsername, activeUsername]);
+
+  // Cleanup any in-flight async analysis on unmount
+  useEffect(() => {
+    return () => {
+      analysisAbortRef.current?.abort();
+    };
+  }, []);
+
+  // When a match is selected, analyze its PGN asynchronously in non-blocking chunks
+  const handleSelectMatch = (match: ChessComMatch, shouldScrollToBoard = true) => {
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
+
+    setSelectedMatch(match);
+    setIsPlaying(false);
+    setSandboxState(null);
+
+    if (match.userColor === 'black') {
+      setIsFlipped(true);
+    } else {
+      setIsFlipped(false);
+    }
+
+    if (shouldScrollToBoard) {
+      setTimeout(() => {
+        const el = document.getElementById('analyzer-board-view');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
+
+    analyzePgnAsync(
+      match.pgn,
+      activeUsername,
+      {
+        whiteName: match.white.username,
+        whiteRating: match.white.rating,
+        blackName: match.black.username,
+        blackRating: match.black.rating,
+        event: `Chess.com Live · ${match.timeControl}`,
+        timeControl: match.timeControl,
+        result:
+          match.white.result === 'win'
+            ? '1-0'
+            : match.black.result === 'win'
+            ? '0-1'
+            : '1/2-1/2',
+        dateFormatted: match.dateFormatted,
+      },
+      controller.signal
+    )
+      .then((analyzed) => {
+        if (controller.signal.aborted) return;
+        setMatchAnalysis(analyzed);
+        setActivePlyIndex(analyzed.plies.length - 1);
+
+        if (analyzed.detectedPuzzles && analyzed.detectedPuzzles.length > 0 && onPuzzlesGenerated) {
+          onPuzzlesGenerated(analyzed.detectedPuzzles);
+        }
+
+        // Enrich critical positions asynchronously with Lichess Cloud Evaluation
+        return enrichAnalysisWithCloudEval(analyzed, controller.signal).then((enriched) => {
+          if (enriched && !controller.signal.aborted) {
+            setMatchAnalysis((current) => (current.id === analyzed.id ? enriched : current));
+          }
+        });
+      })
+      .catch(() => {
+        // Ignore aborted analysis
+      });
+  };
 
   // Fetch real matches when username changes via server-side proxy
   useEffect(() => {
@@ -120,78 +197,37 @@ export function MoveByMoveAnalyzer({
     setMatchErrorCode(undefined);
     setMatchErrorMessage(undefined);
 
-    fetchRealPlayerMatchesWithStatus(activeUsername).then((result) => {
-      if (!isCancelled) {
+    fetchRealPlayerMatchesWithStatus(activeUsername)
+      .then((result) => {
+        if (isCancelled) return;
         setRecentMatches(result.matches);
         setMatchErrorCode(result.code);
         setMatchErrorMessage(result.errorMessage);
         setIsLoadingMatches(false);
-        if (result.matches.length > 0) {
-          handleSelectMatch(result.matches[0]);
+
+        // Only auto-analyze the first match if the user explicitly searched a username;
+        // on initial page load, keep FEATURED_MATCH_ANALYSIS ready with 0ms main-thread work!
+        if (result.matches.length > 0 && userExplicitSearchRef.current) {
+          userExplicitSearchRef.current = false;
+          handleSelectMatch(result.matches[0], false);
         }
-      }
-    });
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setIsLoadingMatches(false);
+        }
+      });
 
     return () => {
       isCancelled = true;
     };
   }, [activeUsername]);
 
-  // When a match is selected, parse its real PGN with chess.js
-  const handleSelectMatch = (match: ChessComMatch) => {
-    setSelectedMatch(match);
-    setIsPlaying(false);
-    setSandboxState(null);
-
-    try {
-      window.history.pushState(null, '', `/analyze/${match.id}`);
-    } catch {
-      // fallback
-    }
-
-    const analyzed = parseAndAnalyzePgn(match.pgn, activeUsername, {
-      whiteName: match.white.username,
-      whiteRating: match.white.rating,
-      blackName: match.black.username,
-      blackRating: match.black.rating,
-      event: `Chess.com Live · ${match.timeControl}`,
-      timeControl: match.timeControl,
-      result: match.white.result === 'win' ? '1-0' : match.black.result === 'win' ? '0-1' : '1/2-1/2',
-      dateFormatted: match.dateFormatted,
-    });
-
-    setMatchAnalysis(analyzed);
-    setActivePlyIndex(analyzed.plies.length - 1);
-
-    // Enrich opening & critical positions asynchronously with Lichess Cloud Evaluation
-    enrichAnalysisWithCloudEval(analyzed).then((enriched) => {
-      if (enriched) {
-        setMatchAnalysis((current) => (current.id === analyzed.id ? enriched : current));
-      }
-    });
-
-    if (match.userColor === 'black') {
-      setIsFlipped(true);
-    } else {
-      setIsFlipped(false);
-    }
-
-    if (analyzed.detectedPuzzles && analyzed.detectedPuzzles.length > 0 && onPuzzlesGenerated) {
-      onPuzzlesGenerated(analyzed.detectedPuzzles);
-    }
-
-    setTimeout(() => {
-      const el = document.getElementById('analyzer-board-view');
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 150);
-  };
-
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usernameInput.trim()) return;
-    const clean = usernameInput.trim();
+    const clean = usernameInput.trim().replace(/^@/, '');
+    if (!clean) return;
+    userExplicitSearchRef.current = true;
     setActiveUsername(clean);
     setIsMatchFeedOpen(true);
     onUsernameChange?.(clean);

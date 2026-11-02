@@ -1,0 +1,18 @@
+{
+  "name": "ChessPulse — Tactical Chess Analysis & Blunder Recovery",
+  "short_name": "ChessPulse",
+  "description": "Connect your Chess.com account to analyze recent matches, uncover tactical blunders with the ChessPulse Tactical Heuristic Engine, and solve personalized puzzles from your own games.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

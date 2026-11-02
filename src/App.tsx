@@ -12,6 +12,7 @@ import { BottomCtaBanner } from './components/BottomCtaBanner';
 import { Footer } from './components/Footer';
 import type { ShareData } from './components/ShareModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { sanitizeChessHandle } from './services/chessComApi';
 import {
   updatePageSeo,
@@ -59,7 +60,7 @@ function resolveInitialRoute(): AppRoute {
   if (path === '/puzzles' || hash === '#puzzles' || hash === '#personal-puzzles') {
     return 'puzzles';
   }
-  if (path === '/' || path === '/index.html' || path === '') {
+  if (path === '/' || path === '/index.html' || path === '' || path.startsWith('/analyze')) {
     return 'home';
   }
   return 'notfound';
@@ -327,99 +328,105 @@ export default function App() {
         isPayingUser={isPayingUser}
       />
 
-      {/* Conditional Page Rendering with Code-Splitting Suspense */}
-      <Suspense
-        fallback={
-          <div className="min-h-[60vh] flex items-center justify-center bg-[#F8FAFC]">
-            <div className="flex items-center gap-2.5 text-xs font-bold text-slate-600">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#059669] animate-ping" />
-              <span>Loading ChessPulse Studio...</span>
-            </div>
-          </div>
-        }
-      >
-        {currentPage === 'puzzles' ? (
-          <PersonalPuzzlesPage
-            loggedInUser={loggedInUser}
-            onLogin={(u) => handleLogin(u, 'puzzles')}
-            onLogout={handleLogout}
-            onBackToHome={() => navigateTo('home')}
-            onOpenShare={handleOpenShare}
-            isPayingUser={isPayingUser}
-          />
-        ) : currentPage === 'impressum' || currentPage === 'datenschutz' ? (
-          <LegalPages page={currentPage} onNavigate={(page) => navigateTo(page)} />
-        ) : currentPage === 'notfound' ? (
-          <NotFoundPage
-            onNavigateHome={() => navigateTo('home')}
-            onNavigatePuzzles={() => navigateTo('puzzles')}
-            onAnalyzeUsername={handleAnalyzeUsername}
-          />
-        ) : (
-          /* Main Marketing & Analyzer Homepage */
-          <main className="w-full">
-            {/* 1. Hero Section with Search & iPhone 16 Pro 3D King Telemetry Showcase */}
-            <HeroSection
-              onAnalyzeUsername={handleAnalyzeUsername}
-              onScrollToPuzzles={() => navigateTo('puzzles')}
-            />
-
-            {/* 2. How ChessPulse Works — 3-Step Introductory Flow */}
-            <HowItWorksSection onSelectStep={handleStepDemo} />
-
-            {/* 3. High-End Performance & Progression Analytics Dashboard */}
-            <PerformanceDashboard
-              username={analyzedUser || loggedInUser || 'Hikaru'}
-              loggedInUser={loggedInUser}
-              onOpenLogin={() => {
-                setAuthTargetRoute('home');
-                setIsAuthModalOpen(true);
-              }}
-              onExploreMatch={() => {
-                const el = document.getElementById('analyzer');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-            />
-
-            {/* 4. Real Match Archive & Move-By-Move Engine Analyzer (Zero Hallucination) */}
-            <section id="analyzer" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-              <div className="mb-6">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-xs font-bold text-emerald-800 mb-2">
-                  <span>Live Chess.com Archives Sync • Zero Mock Opponents</span>
-                </div>
-                <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
-                  Grandmaster Match &amp; Move Analyzer
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
-                  Inspect actual games played on Chess.com. Move classifications are strictly calculated from the ChessPulse Tactical Heuristic Engine.
-                </p>
+      {/* Conditional Page Rendering with Code-Splitting Suspense & Global ErrorBoundary */}
+      <ErrorBoundary fallbackTitle="ChessPulse View Recovery">
+        <Suspense
+          fallback={
+            <div className="min-h-[60vh] flex items-center justify-center bg-[#F8FAFC] dark:bg-[#050505]">
+              <div className="flex items-center gap-2.5 text-xs font-bold text-slate-600 dark:text-slate-300">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#059669] animate-ping" />
+                <span>Loading ChessPulse Studio...</span>
               </div>
-
-              <MoveByMoveAnalyzer
-                initialUsername={analyzedUser || loggedInUser || 'Hikaru'}
-                onOpenShare={handleOpenShare}
-                onUsernameChange={(u) => setAnalyzedUser(sanitizeChessHandle(u) || u)}
-                onOpenProfileStats={() => setIsProfileStatsModalOpen(true)}
+            </div>
+          }
+        >
+          {currentPage === 'puzzles' ? (
+            <PersonalPuzzlesPage
+              loggedInUser={loggedInUser}
+              onLogin={(u) => handleLogin(u, 'puzzles')}
+              onLogout={handleLogout}
+              onBackToHome={() => navigateTo('home')}
+              onOpenShare={handleOpenShare}
+              isPayingUser={isPayingUser}
+            />
+          ) : currentPage === 'impressum' || currentPage === 'datenschutz' ? (
+            <LegalPages page={currentPage} onNavigate={(page) => navigateTo(page)} />
+          ) : currentPage === 'notfound' ? (
+            <NotFoundPage
+              onNavigateHome={() => navigateTo('home')}
+              onNavigatePuzzles={() => navigateTo('puzzles')}
+              onAnalyzeUsername={handleAnalyzeUsername}
+            />
+          ) : (
+            /* Main Marketing & Analyzer Homepage */
+            <main className="w-full">
+              {/* 1. Hero Section with Search & iPhone 16 Pro 3D King Telemetry Showcase */}
+              <HeroSection
+                onAnalyzeUsername={handleAnalyzeUsername}
+                onScrollToPuzzles={() => navigateTo('puzzles')}
               />
-            </section>
 
-            {/* 5. Partner / Key Metrics Strip */}
-            <KeyMetricsStrip />
+              {/* 2. How ChessPulse Works — 3-Step Introductory Flow */}
+              <HowItWorksSection onSelectStep={handleStepDemo} />
 
-            {/* 6. Core Features Section */}
-            <CoreFeaturesSection onTryPuzzle={() => navigateTo('puzzles')} />
+              {/* 3. High-End Performance & Progression Analytics Dashboard */}
+              <ErrorBoundary fallbackTitle="Performance Dashboard Temporarily Unavailable">
+                <PerformanceDashboard
+                  username={analyzedUser || loggedInUser || 'Hikaru'}
+                  loggedInUser={loggedInUser}
+                  onOpenLogin={() => {
+                    setAuthTargetRoute('home');
+                    setIsAuthModalOpen(true);
+                  }}
+                  onExploreMatch={() => {
+                    const el = document.getElementById('analyzer');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                />
+              </ErrorBoundary>
 
-            {/* 7. ChessPulse Pricing Section */}
-            <PricingSection onSelectPlan={handleSelectPlan} />
+              {/* 4. Real Match Archive & Move-By-Move Engine Analyzer (Zero Hallucination) */}
+              <section id="analyzer" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+                <div className="mb-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-xs font-bold text-emerald-800 mb-2">
+                    <span>Live Chess.com Archives Sync • Zero Mock Opponents</span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
+                    Grandmaster Match &amp; Move Analyzer
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
+                    Inspect actual games played on Chess.com. Move classifications are strictly calculated from the ChessPulse Tactical Heuristic Engine.
+                  </p>
+                </div>
 
-            {/* 8. Interactive FAQ */}
-            <FaqSection />
+                <ErrorBoundary fallbackTitle="Match Analyzer Temporarily Unavailable">
+                  <MoveByMoveAnalyzer
+                    initialUsername={analyzedUser || loggedInUser || 'Hikaru'}
+                    onOpenShare={handleOpenShare}
+                    onUsernameChange={(u) => setAnalyzedUser(sanitizeChessHandle(u) || u)}
+                    onOpenProfileStats={() => setIsProfileStatsModalOpen(true)}
+                  />
+                </ErrorBoundary>
+              </section>
 
-            {/* 9. Bottom CTA Banner */}
-            <BottomCtaBanner onAnalyzeUsername={handleAnalyzeUsername} />
-          </main>
-        )}
-      </Suspense>
+              {/* 5. Partner / Key Metrics Strip */}
+              <KeyMetricsStrip />
+
+              {/* 6. Core Features Section */}
+              <CoreFeaturesSection onTryPuzzle={() => navigateTo('puzzles')} />
+
+              {/* 7. ChessPulse Pricing Section */}
+              <PricingSection onSelectPlan={handleSelectPlan} />
+
+              {/* 8. Interactive FAQ */}
+              <FaqSection />
+
+              {/* 9. Bottom CTA Banner */}
+              <BottomCtaBanner onAnalyzeUsername={handleAnalyzeUsername} />
+            </main>
+          )}
+        </Suspense>
+      </ErrorBoundary>
 
       {/* 10. Minimal Footer */}
       <Footer

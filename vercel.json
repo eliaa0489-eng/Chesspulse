@@ -8,6 +8,13 @@
       ]
     },
     {
+      "source": "/(site\\.webmanifest|manifest\\.json)",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
@@ -19,6 +26,6 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/|site\\.webmanifest|manifest\\.json|favicon.*|og-preview\\.svg|robots\\.txt|sitemap\\.xml).*)", "destination": "/index.html" }
   ]
 }

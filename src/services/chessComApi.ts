@@ -221,7 +221,14 @@ function setInClientCache<T>(map: Map<string, ClientCacheEntry<T>>, key: string,
   map.set(key, { value, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -240,8 +247,8 @@ async function fetchDirectPublicChessComOverview(
 ): Promise<{ profile: Record<string, unknown>; stats: Record<string, unknown> } | 'NOT_FOUND' | null> {
   try {
     const [profileRes, statsRes] = await Promise.all([
-      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}`, 10000),
-      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/stats`, 10000),
+      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}`, 6000),
+      fetchWithTimeout(`https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/stats`, 6000),
     ]);
     if (profileRes.status === 404) return 'NOT_FOUND';
     if (!profileRes.ok) return null;
@@ -260,7 +267,7 @@ async function fetchDirectPublicChessComGames(
   try {
     const archivesRes = await fetchWithTimeout(
       `https://api.chess.com/pub/player/${encodeURIComponent(cleanHandle)}/games/archives`,
-      10000
+      6000
     );
     if (archivesRes.status === 404) return 'NOT_FOUND';
     if (!archivesRes.ok) return null;
@@ -272,7 +279,7 @@ async function fetchDirectPublicChessComGames(
     if (typeof latestUrl !== 'string' || !latestUrl.startsWith('https://api.chess.com/')) {
       return [];
     }
-    const gamesRes = await fetchWithTimeout(latestUrl, 12000);
+    const gamesRes = await fetchWithTimeout(latestUrl, 6000);
     if (!gamesRes.ok) return null;
     const gamesData = (await gamesRes.json()) as { games?: Record<string, unknown>[] };
     const rawGames = Array.isArray(gamesData?.games) ? gamesData.games : [];
@@ -323,8 +330,8 @@ export async function fetchLivePlayerStats(
 
     try {
       const [overviewRes, matchesRes] = await Promise.all([
-        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/overview`, 10000),
-        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=12`, 12000),
+        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/overview`, 6000),
+        fetchWithTimeout(`/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=12`, 6000),
       ]);
 
       const contentType = overviewRes.headers.get('content-type') || '';
@@ -506,7 +513,7 @@ export async function fetchRealPlayerMatchesWithStatus(
     try {
       const response = await fetchWithTimeout(
         `/api/chesscom/player/${encodeURIComponent(cleanHandle)}/matches?limit=${safeLimit}`,
-        12000
+        6000
       );
       const isJson = (response.headers.get('content-type') || '').includes('application/json');
 

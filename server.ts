@@ -104,8 +104,8 @@ function setCached<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
   apiCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
-// --- Hardened Upstream Fetch (redirect: 'error' + 25 MB Stream Cap) ---
-async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ status: number; data: unknown }> {
+// --- Hardened Upstream Fetch (redirect: 'error' + 25 MB Stream Cap + 6000ms Timeout) ---
+async function fetchChessComJson(url: string, timeoutMs = 6000): Promise<{ status: number; data: unknown }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -490,6 +490,30 @@ app.set('trust proxy', 1);
     res.type('application/xml').send(xml);
   });
 
+  app.get(['/site.webmanifest', '/manifest.json'], (_req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json({
+      name: 'ChessPulse — Tactical Chess Analysis & Blunder Recovery',
+      short_name: 'ChessPulse',
+      description:
+        'Connect your Chess.com account to analyze recent matches, uncover tactical blunders with the ChessPulse Tactical Heuristic Engine, and solve personalized puzzles from your own games.',
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      background_color: '#FFFFFF',
+      theme_color: '#059669',
+      icons: [
+        {
+          src: '/favicon.svg',
+          sizes: 'any',
+          type: 'image/svg+xml',
+          purpose: 'any maskable',
+        },
+      ],
+    });
+  });
+
   // --- Health Check Route ---
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
@@ -860,7 +884,7 @@ app.set('trust proxy', 1);
   });
 
   app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
-    const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 24) : [];
+    const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 8) : [];
     const results: Record<
       string,
       {

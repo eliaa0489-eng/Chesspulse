@@ -105,9 +105,20 @@ function validateOfficialChessComUrl(rawUrl: unknown): string | undefined {
   }
 }
 
-async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ status: number; data: any }> {
+function getAbortSignal(timeoutMs = 6000): { signal: AbortSignal; cleanup: () => void } {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(timeoutMs), cleanup: () => {} };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
+async function fetchChessComJson(url: string, timeoutMs = 6000): Promise<{ status: number; data: any }> {
+  const { signal, cleanup } = getAbortSignal(timeoutMs);
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -116,7 +127,7 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
         'User-Agent': CHESSCOM_USER_AGENT,
         Accept: 'application/json',
       },
-      signal: controller.signal,
+      signal,
     });
     if (!response.ok) {
       return { status: response.status, data: null };
@@ -128,7 +139,7 @@ async function fetchChessComJson(url: string, timeoutMs = 15000): Promise<{ stat
     const data = await response.json();
     return { status: response.status, data };
   } finally {
-    clearTimeout(timer);
+    cleanup();
   }
 }
 
@@ -325,7 +336,7 @@ app.get(
         return res.status(400).json({ error: 'Invalid archive URL returned by upstream.', code: 'UPSTREAM_ERROR' });
       }
 
-      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 15000);
+      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 6000);
       const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
       const sorted = [...rawGames].sort((a, b) => (b?.end_time || 0) - (a?.end_time || 0));
       const games = [];
@@ -425,7 +436,7 @@ app.get('/api/chesscom/cloud-eval', rateLimitMiddleware, async (req: Request, re
 });
 
 app.post('/api/chesscom/cloud-eval-batch', rateLimitMiddleware, async (req: Request, res: Response) => {
-  const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 24) : [];
+  const rawFens = Array.isArray(req.body?.fens) ? req.body.fens.slice(0, 8) : [];
   const results: Record<string, any> = Object.create(null);
 
   await Promise.all(
