@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { HowItWorksSection } from './components/HowItWorksSection';
@@ -519,6 +520,7 @@ export default function App() {
           />
         )}
       </Suspense>
+      <Analytics />
     </div>
   );
 }
