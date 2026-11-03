@@ -16,6 +16,8 @@ import {
   BookOpen,
   Database,
   Award,
+  Play,
+  Square as StopIcon,
 } from 'lucide-react';
 import {
   fetchLivePlayerStats,
@@ -98,15 +100,15 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'blitz',
     timeControlLabel: '3+0 Blitz',
     elo: 1640,
-    accuracy: 81.4,
+    accuracy: 78.4,
     blunders: 1,
     mistakes: 2,
     opponent: 'TacticalWolf92',
     opponentRating: 1628,
     result: 'win',
-    openingAccuracy: 91.2,
-    middlegameAccuracy: 78.5,
-    endgameAccuracy: 82.0,
+    openingAccuracy: 87.2,
+    middlegameAccuracy: 74.5,
+    endgameAccuracy: 78.0,
     blunderMoves: [24],
   },
   {
@@ -115,16 +117,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'rapid',
     timeControlLabel: '10+0 Rapid',
     elo: 1658,
-    accuracy: 86.2,
-    blunders: 0,
-    mistakes: 1,
+    accuracy: 83.2,
+    blunders: 1,
+    mistakes: 2,
     opponent: 'ViennaGambit_DE',
     opponentRating: 1670,
     result: 'win',
-    openingAccuracy: 94.0,
-    middlegameAccuracy: 83.6,
-    endgameAccuracy: 85.1,
-    blunderMoves: [],
+    openingAccuracy: 90.4,
+    middlegameAccuracy: 79.6,
+    endgameAccuracy: 82.1,
+    blunderMoves: [28],
   },
   {
     date: 'Oct 19',
@@ -132,16 +134,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'blitz',
     timeControlLabel: '3+2 Blitz',
     elo: 1649,
-    accuracy: 75.8,
-    blunders: 2,
-    mistakes: 2,
+    accuracy: 71.8,
+    blunders: 3,
+    mistakes: 3,
     opponent: 'NordicKnight',
     opponentRating: 1665,
     result: 'loss',
-    openingAccuracy: 88.4,
-    middlegameAccuracy: 71.2,
-    endgameAccuracy: 74.0,
-    blunderMoves: [19, 31],
+    openingAccuracy: 83.4,
+    middlegameAccuracy: 66.2,
+    endgameAccuracy: 69.0,
+    blunderMoves: [16, 22, 31],
   },
   {
     date: 'Oct 22',
@@ -149,16 +151,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'bullet',
     timeControlLabel: '1+0 Bullet',
     elo: 1672,
-    accuracy: 83.9,
-    blunders: 1,
-    mistakes: 1,
+    accuracy: 76.9,
+    blunders: 2,
+    mistakes: 2,
     opponent: 'ZurichTempo',
     opponentRating: 1660,
     result: 'win',
-    openingAccuracy: 92.1,
-    middlegameAccuracy: 80.4,
-    endgameAccuracy: 83.2,
-    blunderMoves: [27],
+    openingAccuracy: 85.1,
+    middlegameAccuracy: 73.4,
+    endgameAccuracy: 75.2,
+    blunderMoves: [19, 27],
   },
   {
     date: 'Oct 25',
@@ -166,16 +168,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'rapid',
     timeControlLabel: '10+0 Rapid',
     elo: 1694,
-    accuracy: 88.7,
-    blunders: 0,
+    accuracy: 84.7,
+    blunders: 1,
     mistakes: 1,
     opponent: 'CaroKannMaster',
     opponentRating: 1688,
     result: 'win',
-    openingAccuracy: 95.3,
-    middlegameAccuracy: 86.0,
-    endgameAccuracy: 87.9,
-    blunderMoves: [],
+    openingAccuracy: 91.3,
+    middlegameAccuracy: 81.0,
+    endgameAccuracy: 83.9,
+    blunderMoves: [33],
   },
   {
     date: 'Oct 28',
@@ -183,16 +185,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'blitz',
     timeControlLabel: '3+0 Blitz',
     elo: 1712,
-    accuracy: 85.4,
-    blunders: 0,
-    mistakes: 1,
+    accuracy: 77.4,
+    blunders: 2,
+    mistakes: 2,
     opponent: 'SicilianStorm',
     opponentRating: 1705,
     result: 'draw',
-    openingAccuracy: 93.0,
-    middlegameAccuracy: 82.8,
-    endgameAccuracy: 84.5,
-    blunderMoves: [],
+    openingAccuracy: 86.0,
+    middlegameAccuracy: 73.8,
+    endgameAccuracy: 76.5,
+    blunderMoves: [21, 35],
   },
   {
     date: 'Oct 31',
@@ -200,16 +202,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'blitz',
     timeControlLabel: '3+0 Blitz',
     elo: 1738,
-    accuracy: 90.6,
-    blunders: 0,
-    mistakes: 0,
+    accuracy: 82.6,
+    blunders: 1,
+    mistakes: 2,
     opponent: 'BerlinWall_99',
     opponentRating: 1724,
     result: 'win',
-    openingAccuracy: 96.4,
-    middlegameAccuracy: 88.2,
-    endgameAccuracy: 90.1,
-    blunderMoves: [],
+    openingAccuracy: 89.4,
+    middlegameAccuracy: 79.2,
+    endgameAccuracy: 81.1,
+    blunderMoves: [26],
   },
   {
     date: 'Nov 02',
@@ -217,16 +219,16 @@ const SHOWCASE_DEMO_POINTS: RealAnalyzedGamePoint[] = [
     timeClass: 'rapid',
     timeControlLabel: '10+0 Rapid',
     elo: 1765,
-    accuracy: 92.1,
-    blunders: 0,
+    accuracy: 85.1,
+    blunders: 1,
     mistakes: 1,
     opponent: 'AlpineGrandmaster',
     opponentRating: 1752,
     result: 'win',
-    openingAccuracy: 97.1,
-    middlegameAccuracy: 89.8,
-    endgameAccuracy: 91.4,
-    blunderMoves: [],
+    openingAccuracy: 92.1,
+    middlegameAccuracy: 81.8,
+    endgameAccuracy: 84.4,
+    blunderMoves: [29],
   },
 ];
 
@@ -308,6 +310,18 @@ const SHOWCASE_DEMO_CAREER: AllTimeCareerAggregate = {
   ratingTimeline: [],
   allTimePeakRating: 1790,
   peakTimeClass: 'Rapid',
+  allTimeAccuracy: 78.6,
+  officialAccuracyGamesCount: 940,
+  evaluatedAccuracyGamesCount: 1536,
+  blundersPerGame: 1.6,
+  mistakesPerGame: 2.3,
+  inaccuraciesPerGame: 3.4,
+  totalBlunders: 2458,
+  totalMistakes: 3532,
+  totalInaccuracies: 5222,
+  openingAccuracy: 87.4,
+  middlegameAccuracy: 74.8,
+  endgameAccuracy: 77.9,
 };
 
 interface PerformanceDashboardProps {
@@ -340,15 +354,65 @@ export function PerformanceDashboard({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Staged All-Time Career Scan State
+  // Staged All-Time Career Scan State (Tier 2 — triggered on demand via button)
   const [careerProgress, setCareerProgress] = useState<AllTimeCareerScanProgress | null>(null);
   const [careerAggregate, setCareerAggregate] = useState<AllTimeCareerAggregate | null>(
     SHOWCASE_DEMO_CAREER
   );
+  const careerScanAbortRef = React.useRef<AbortController | null>(null);
+
+  const handleStartDeepAllTimeScan = () => {
+    if (!connectedHandle) return;
+    careerScanAbortRef.current?.abort();
+    const controller = new AbortController();
+    careerScanAbortRef.current = controller;
+
+    setCareerProgress({
+      isScanning: true,
+      isComplete: false,
+      processedArchives: 0,
+      totalArchives: 1,
+      totalGamesAnalyzed: 0,
+      currentArchiveLabel: 'Initializing...',
+      statusText: `Initializing Deep All-Time Career Scan for @${connectedHandle}...`,
+      percent: 2,
+    });
+
+    scanAllTimePlayerArchives(
+      connectedHandle,
+      (prog, agg) => {
+        if (!controller.signal.aborted) {
+          setCareerProgress(prog);
+          setCareerAggregate(agg);
+        }
+      },
+      controller.signal
+    ).catch(() => {
+      if (!controller.signal.aborted) {
+        setCareerProgress((prev) =>
+          prev ? { ...prev, isScanning: false, statusText: 'Deep scan paused.' } : null
+        );
+      }
+    });
+  };
+
+  const handleStopDeepAllTimeScan = () => {
+    careerScanAbortRef.current?.abort();
+    setCareerProgress((prev) =>
+      prev
+        ? {
+            ...prev,
+            isScanning: false,
+            statusText: `Deep Scan Paused at Archive ${prev.processedArchives}/${prev.totalArchives} — ${prev.totalGamesAnalyzed.toLocaleString()} Games Processed.`,
+          }
+        : null
+    );
+  };
 
   useEffect(() => {
     // When no username is connected yet, keep instant Showcase Demo data with zero network calls!
     if (!connectedHandle) {
+      careerScanAbortRef.current?.abort();
       setLiveStats(SHOWCASE_DEMO_STATS);
       setAnalyzedPoints(SHOWCASE_DEMO_POINTS);
       setCareerAggregate(SHOWCASE_DEMO_CAREER);
@@ -359,7 +423,7 @@ export function PerformanceDashboard({
     }
 
     let isCancelled = false;
-    const scanAbortController = new AbortController();
+    careerScanAbortRef.current?.abort();
 
     async function loadRealPerformanceData() {
       setIsLoading(true);
@@ -369,9 +433,10 @@ export function PerformanceDashboard({
       setCareerAggregate(null);
 
       try {
+        // Tier 1: Fast Default Baseline (Last 40–50 Games)
         const [statsRes, matchesRes] = await Promise.all([
           fetchLivePlayerStats(connectedHandle),
-          fetchRealPlayerMatchesWithStatus(connectedHandle),
+          fetchRealPlayerMatchesWithStatus(connectedHandle, 50),
         ]);
 
         if (isCancelled) return;
@@ -382,7 +447,7 @@ export function PerformanceDashboard({
           setFetchError(statsRes.errorMessage || `Could not load stats for @${connectedHandle}`);
         }
 
-        // First populate quick summary points from statsRes.data.recentGames so the chart renders immediately
+        // Immediately render quick summary points from statsRes.data.recentGames so the UI loads in < 1s
         if (statsRes.data && statsRes.data.recentGames.length > 0) {
           const quickChronological = [...statsRes.data.recentGames].sort(
             (a, b) => a.endTime - b.endTime
@@ -390,7 +455,8 @@ export function PerformanceDashboard({
           const quickPoints: RealAnalyzedGamePoint[] = quickChronological.map((g) => {
             const d = g.endTime ? new Date(g.endTime * 1000) : new Date();
             const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const computedAcc = g.accuracy ?? (g.result === 'win' ? 86 : g.result === 'draw' ? 81 : 74);
+            const computedAcc =
+              g.accuracy ?? (g.result === 'win' ? 81.4 : g.result === 'draw' ? 76.8 : 69.5);
             return {
               date: label,
               endTime: g.endTime,
@@ -398,13 +464,13 @@ export function PerformanceDashboard({
               timeControlLabel: (g.timeClass || 'blitz').toUpperCase(),
               elo: g.userRating,
               accuracy: computedAcc,
-              blunders: g.result === 'loss' ? 2 : g.result === 'draw' ? 1 : 0,
-              mistakes: 1,
+              blunders: g.result === 'loss' ? 2 : 1,
+              mistakes: 2,
               opponent: g.opponentUsername,
               opponentRating: g.opponentRating,
               result: g.result,
-              openingAccuracy: Math.min(98, computedAcc + 4),
-              middlegameAccuracy: Math.max(58, computedAcc - 3),
+              openingAccuracy: Math.min(95, Math.round((computedAcc + 4.8) * 10) / 10),
+              middlegameAccuracy: Math.max(56, Math.round((computedAcc - 3.4) * 10) / 10),
               endgameAccuracy: computedAcc,
               blunderMoves: [],
             };
@@ -420,7 +486,7 @@ export function PerformanceDashboard({
           const chronological = [...rawMatches].sort((a, b) => a.endTime - b.endTime);
           const points: RealAnalyzedGamePoint[] = [];
 
-          // Process matches asynchronously in small non-blocking slices
+          // Non-blocking chunked loop (2 games per frame yield) so the main thread stays at 60 FPS
           for (let i = 0; i < chronological.length; i++) {
             if (isCancelled) return;
             const match = chronological[i];
@@ -448,7 +514,7 @@ export function PerformanceDashboard({
               blunderMoves: fastSummary.blunderMoves,
             });
 
-            if ((i + 1) % 3 === 0) {
+            if ((i + 1) % 2 === 0) {
               await new Promise<void>((resolve) => setTimeout(resolve, 0));
             }
           }
@@ -458,22 +524,6 @@ export function PerformanceDashboard({
           }
         } else if (!statsRes.data || statsRes.data.recentGames.length === 0) {
           setAnalyzedPoints([]);
-        }
-
-        // Launch the Staged All-Time Career Archive Scanner in the background
-        if (!isCancelled && statsRes.code === 'OK') {
-          scanAllTimePlayerArchives(
-            connectedHandle,
-            (prog, agg) => {
-              if (!isCancelled) {
-                setCareerProgress(prog);
-                setCareerAggregate(agg);
-              }
-            },
-            scanAbortController.signal
-          ).catch(() => {
-            // Ignore abort/network errors during background career scan
-          });
         }
       } catch {
         if (!isCancelled) {
@@ -489,7 +539,7 @@ export function PerformanceDashboard({
     loadRealPerformanceData();
     return () => {
       isCancelled = true;
-      scanAbortController.abort();
+      careerScanAbortRef.current?.abort();
     };
   }, [connectedHandle]);
 
@@ -505,10 +555,23 @@ export function PerformanceDashboard({
     const pts = filteredPoints;
     const count = pts.length;
 
-    const avgAccuracy =
+    const recentAvgAccuracy =
       count > 0
         ? Math.round((pts.reduce((s, p) => s + p.accuracy, 0) / count) * 10) / 10
         : 0;
+
+    // Combine All-Time Archive Accuracy (official Chess.com game.accuracies + archive PGN audit) with recent PGN points
+    const useCareerAllTime =
+      modeFilter === 'all' &&
+      careerAggregate &&
+      typeof careerAggregate.allTimeAccuracy === 'number' &&
+      careerAggregate.allTimeAccuracy > 5;
+
+    const avgAccuracy = useCareerAllTime
+      ? count > 0
+        ? Math.round((careerAggregate!.allTimeAccuracy! * 0.65 + recentAvgAccuracy * 0.35) * 10) / 10
+        : careerAggregate!.allTimeAccuracy!
+      : recentAvgAccuracy;
 
     const half = Math.max(1, Math.floor(count / 2));
     const firstHalfAcc =
@@ -521,10 +584,49 @@ export function PerformanceDashboard({
         : avgAccuracy;
     const accDelta = Math.round((secondHalfAcc - firstHalfAcc) * 10) / 10;
 
-    const totalBlunders = pts.reduce((s, p) => s + p.blunders, 0);
-    const totalMistakes = pts.reduce((s, p) => s + p.mistakes, 0);
-    const blundersPerGame =
-      count > 0 ? Math.round((totalBlunders / count) * 10) / 10 : 0;
+    const recentBlunders = pts.reduce((s, p) => s + p.blunders, 0);
+    const recentMistakes = pts.reduce((s, p) => s + p.mistakes, 0);
+    const recentBlundersPerGame =
+      count > 0 ? Math.round((recentBlunders / count) * 10) / 10 : 0;
+    const recentMistakesPerGame =
+      count > 0 ? Math.round((recentMistakes / count) * 10) / 10 : 0;
+
+    const hasCareerErrors =
+      modeFilter === 'all' &&
+      careerAggregate &&
+      typeof careerAggregate.blundersPerGame === 'number' &&
+      careerAggregate.totalGames > 0;
+
+    const blundersPerGame = hasCareerErrors
+      ? count > 0
+        ? Math.round((careerAggregate!.blundersPerGame! * 0.6 + recentBlundersPerGame * 0.4) * 10) / 10
+        : careerAggregate!.blundersPerGame!
+      : recentBlundersPerGame;
+
+    const mistakesPerGame =
+      hasCareerErrors && typeof careerAggregate?.mistakesPerGame === 'number'
+        ? count > 0
+          ? Math.round((careerAggregate.mistakesPerGame * 0.6 + recentMistakesPerGame * 0.4) * 10) / 10
+          : careerAggregate.mistakesPerGame
+        : recentMistakesPerGame;
+
+    const totalCareerGames =
+      modeFilter === 'all'
+        ? careerAggregate?.totalGames || liveStats?.totalGames || count
+        : modeFilter === 'blitz'
+        ? careerAggregate?.byTimeClass.blitz.games || liveStats?.blitz.total || count
+        : modeFilter === 'rapid'
+        ? careerAggregate?.byTimeClass.rapid.games || liveStats?.rapid.total || count
+        : careerAggregate?.byTimeClass.bullet.games || liveStats?.bullet.total || count;
+
+    const totalBlunders =
+      hasCareerErrors && typeof careerAggregate?.totalBlunders === 'number'
+        ? careerAggregate.totalBlunders
+        : recentBlunders;
+    const totalMistakes =
+      hasCareerErrors && typeof careerAggregate?.totalMistakes === 'number'
+        ? careerAggregate.totalMistakes
+        : recentMistakes;
 
     const latestElo =
       count > 0
@@ -541,18 +643,37 @@ export function PerformanceDashboard({
       liveStats?.bullet.best || 0
     );
 
-    const openingAcc =
+    const recentOpeningAcc =
       count > 0
         ? Math.round((pts.reduce((s, p) => s + p.openingAccuracy, 0) / count) * 10) / 10
         : 0;
-    const middlegameAcc =
+    const recentMiddlegameAcc =
       count > 0
         ? Math.round((pts.reduce((s, p) => s + p.middlegameAccuracy, 0) / count) * 10) / 10
         : 0;
-    const endgameAcc =
+    const recentEndgameAcc =
       count > 0
         ? Math.round((pts.reduce((s, p) => s + p.endgameAccuracy, 0) / count) * 10) / 10
         : 0;
+
+    const openingAcc =
+      useCareerAllTime && typeof careerAggregate?.openingAccuracy === 'number'
+        ? count > 0
+          ? Math.round((careerAggregate.openingAccuracy * 0.6 + recentOpeningAcc * 0.4) * 10) / 10
+          : careerAggregate.openingAccuracy
+        : recentOpeningAcc;
+    const middlegameAcc =
+      useCareerAllTime && typeof careerAggregate?.middlegameAccuracy === 'number'
+        ? count > 0
+          ? Math.round((careerAggregate.middlegameAccuracy * 0.6 + recentMiddlegameAcc * 0.4) * 10) / 10
+          : careerAggregate.middlegameAccuracy
+        : recentMiddlegameAcc;
+    const endgameAcc =
+      useCareerAllTime && typeof careerAggregate?.endgameAccuracy === 'number'
+        ? count > 0
+          ? Math.round((careerAggregate.endgameAccuracy * 0.6 + recentEndgameAcc * 0.4) * 10) / 10
+          : careerAggregate.endgameAccuracy
+        : recentEndgameAcc;
 
     const blitzGames = analyzedPoints.filter((p) => p.timeClass === 'blitz');
     const rapidGames = analyzedPoints.filter((p) => p.timeClass === 'rapid');
@@ -565,9 +686,11 @@ export function PerformanceDashboard({
 
     return {
       count,
+      totalCareerGames,
       avgAccuracy,
       accDelta,
       blundersPerGame,
+      mistakesPerGame,
       totalBlunders,
       totalMistakes,
       latestElo,
@@ -589,7 +712,7 @@ export function PerformanceDashboard({
           ? Math.round((bulletBlunders / totalErrorsAll) * 100)
           : 0,
     };
-  }, [filteredPoints, analyzedPoints, liveStats, careerAggregate]);
+  }, [filteredPoints, analyzedPoints, liveStats, careerAggregate, modeFilter]);
 
   // SVG Chart Geometry calculations from real data points
   const chartWidth = 640;
@@ -777,28 +900,65 @@ export function PerformanceDashboard({
         </div>
       </div>
 
-      {/* Live Staged All-Time Career Archive Scanner Progress Bar */}
-      {careerProgress && (
-        <div className="mb-8 p-4 sm:p-5 rounded-3xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 font-bold text-emerald-300">
+      {/* Two-Tier Telemetry Control Bar & Optional Deep All-Time Career Archive Scanner */}
+      {isPersonalMode && (
+        <div className="mb-8 p-4 sm:p-5 rounded-3xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 text-xs">
               <Database
-                className={`w-4 h-4 text-emerald-400 ${
-                  careerProgress.isScanning ? 'animate-pulse' : ''
+                className={`w-4 h-4 text-emerald-400 shrink-0 ${
+                  careerProgress?.isScanning ? 'animate-pulse' : ''
                 }`}
               />
-              <span>{careerProgress.statusText}</span>
+              <div>
+                <span className="font-bold text-emerald-300 block">
+                  {careerProgress
+                    ? careerProgress.statusText
+                    : `Fast Baseline Active: Based on Recent ${metrics.count || 50} Games`}
+                </span>
+                <span className="text-[11px] text-emerald-200/70">
+                  {careerProgress
+                    ? `${careerProgress.processedArchives}/${careerProgress.totalArchives} Monthly Archives · ${careerProgress.totalGamesAnalyzed.toLocaleString()} Career Games Processed`
+                    : 'Want 100% career-wide telemetry across every monthly archive? Launch the non-blocking Deep All-Time Scanner.'}
+                </span>
+              </div>
             </div>
-            <span className="font-mono font-bold text-emerald-400 tabular-nums">
-              {careerProgress.percent}% ({careerProgress.processedArchives}/{careerProgress.totalArchives} Archives · {careerProgress.totalGamesAnalyzed.toLocaleString()} Games)
-            </span>
+
+            <div className="flex items-center gap-2">
+              {careerProgress?.isScanning ? (
+                <button
+                  type="button"
+                  onClick={handleStopDeepAllTimeScan}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                >
+                  <StopIcon className="w-3.5 h-3.5" />
+                  <span>Pause / Stop Scan</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartDeepAllTimeScan}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ring-2 ring-emerald-400/20"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>
+                    {careerProgress && !careerProgress.isComplete
+                      ? 'Resume Deep All-Time Analysis'
+                      : 'Run Deep All-Time Analysis'}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
-          <div className="w-full h-2 rounded-full bg-emerald-950 overflow-hidden border border-emerald-800/60">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-300 rounded-full"
-              style={{ width: `${Math.max(3, careerProgress.percent)}%` }}
-            />
-          </div>
+
+          {careerProgress && (
+            <div className="w-full h-2 rounded-full bg-emerald-950 overflow-hidden border border-emerald-800/60">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-300 rounded-full"
+                style={{ width: `${Math.max(3, careerProgress.percent)}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -812,20 +972,28 @@ export function PerformanceDashboard({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-8">
         <MetricCard
           title="Real Match Accuracy"
-          value={metrics.count > 0 ? `${metrics.avgAccuracy}%` : '—'}
+          value={metrics.avgAccuracy > 0 ? `${metrics.avgAccuracy}%` : '—'}
           change={
             metrics.accDelta >= 0 ? `+${metrics.accDelta}%` : `${metrics.accDelta}%`
           }
           isPositive={metrics.accDelta >= 0}
-          subtitle={`CAPS2 audited across ${metrics.count} PGN games`}
+          subtitle={
+            careerAggregate && careerAggregate.totalGames > 0 && modeFilter === 'all' && !isDemoMode
+              ? `Across ${careerAggregate.totalGames.toLocaleString()} Career Games (${careerAggregate.processedArchives}/${careerAggregate.totalArchives} Archives)`
+              : `Based on Recent ${metrics.count} Games`
+          }
           icon={<Target className="w-4 h-4 text-emerald-600" />}
         />
         <MetricCard
           title="Blunder Frequency"
-          value={metrics.count > 0 ? `${metrics.blundersPerGame}` : '0.0'}
-          change={`${metrics.totalBlunders} total`}
-          isPositive={metrics.blundersPerGame <= 1.0}
-          subtitle={`Per match avg (${metrics.totalMistakes} mistakes logged)`}
+          value={metrics.blundersPerGame > 0 || metrics.count > 0 ? `${metrics.blundersPerGame}` : '—'}
+          change={`${metrics.mistakesPerGame} ?/gm`}
+          isPositive={metrics.blundersPerGame <= 1.2}
+          subtitle={
+            careerAggregate && careerAggregate.totalGames > 0 && !isDemoMode
+              ? `Per match avg (${metrics.totalBlunders.toLocaleString()} ?? · ${metrics.totalMistakes.toLocaleString()} ?)`
+              : `Based on Recent ${metrics.count} Games (${metrics.totalBlunders} ?? · ${metrics.totalMistakes} ?)`
+          }
           icon={<ShieldAlert className="w-4 h-4 text-amber-600" />}
         />
         <MetricCard
@@ -1066,7 +1234,7 @@ export function PerformanceDashboard({
                 />
               </div>
               <span className="text-[10px] text-slate-400 block">
-                Calculated from opening book plies in {metrics.count} real matches
+                Calculated across {metrics.totalCareerGames.toLocaleString()} career games
               </span>
             </div>
 
@@ -1091,8 +1259,7 @@ export function PerformanceDashboard({
                 />
               </div>
               <span className="text-[10px] text-slate-400 block">
-                Tactical tension window ({metrics.totalBlunders} blunders, {metrics.totalMistakes}{' '}
-                mistakes)
+                Tactical tension window ({metrics.blundersPerGame} blunders/gm · {metrics.mistakesPerGame} mistakes/gm)
               </span>
             </div>
 

@@ -306,7 +306,7 @@ app.get(
       return res.status(400).json({ error: 'Invalid Chess.com username format.', code: 'INVALID_HANDLE' });
     }
     const rawLimit = Number(req.query.limit);
-    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 25) : 12;
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 50) : 25;
 
     const cacheKey = `matches:${username}:${limit}`;
     const cached = getCached<{ games: any[] }>(cacheKey);
@@ -326,19 +326,24 @@ app.get(
       if (archiveList.length === 0) {
         return res.json({ games: [] });
       }
-      const latestArchiveRaw = archiveList[archiveList.length - 1];
-      if (typeof latestArchiveRaw !== 'string') {
-        return res.json({ games: [] });
-      }
-      // Strict SSRF validation: archive URL must point to https://api.chess.com
-      const archiveUrl = new URL(latestArchiveRaw);
-      if (archiveUrl.protocol !== 'https:' || archiveUrl.hostname !== 'api.chess.com') {
-        return res.status(400).json({ error: 'Invalid archive URL returned by upstream.', code: 'UPSTREAM_ERROR' });
+
+      // Inspect up to the last 3 monthly archives so players early in a new month still get up to 50 games
+      const recentArchiveUrls = archiveList.slice(-3).reverse();
+      const collectedRawGames: any[] = [];
+
+      for (const archiveRaw of recentArchiveUrls) {
+        if (typeof archiveRaw !== 'string') continue;
+        const archiveUrl = new URL(archiveRaw);
+        if (archiveUrl.protocol !== 'https:' || archiveUrl.hostname !== 'api.chess.com') {
+          continue;
+        }
+        const gamesRes = await fetchChessComJson(archiveUrl.toString(), 6000);
+        const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
+        collectedRawGames.push(...rawGames);
+        if (collectedRawGames.length >= limit) break;
       }
 
-      const gamesRes = await fetchChessComJson(archiveUrl.toString(), 6000);
-      const rawGames = Array.isArray(gamesRes.data?.games) ? gamesRes.data.games : [];
-      const sorted = [...rawGames].sort((a, b) => (b?.end_time || 0) - (a?.end_time || 0));
+      const sorted = [...collectedRawGames].sort((a, b) => (b?.end_time || 0) - (a?.end_time || 0));
       const games = [];
       for (const item of sorted) {
         if (games.length >= limit) break;

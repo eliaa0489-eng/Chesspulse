@@ -1,44 +1,53 @@
-# ChessPulse Upgrade Plan: Instant Showcase Startup, Unified Single-Source Account Sync & Board Flip + Move Badges
+# ChessPulse Principal Engine & All-Time Telemetry Architecture Plan
 
-## 1. Architectural & Functional Overview
+## 1. Root Cause Analysis
 
-### A. Eliminate Automatic `@Hikaru` Network & Archive Scanning on Startup
-- **Zero Initial API Calls**: On initial page load (`analyzedUser === null` and `loggedInUser === null`), neither `PerformanceDashboard` nor `MoveByMoveAnalyzer` will automatically fetch `@Hikaru`'s 1,000+ historical games or trigger `scanAllTimePlayerArchives`.
-- **Instant Showcase Demo Mode**:
-  - **`PerformanceDashboard`**: Renders an instant, pre-computed Showcase Demo dataset (ELO trajectory curve, Opening/Middlegame/Endgame CAPS2 accuracy breakdown, W/D/L split by White/Black and termination reason, time-control cards, and Opening Repertoire telemetry) with zero network latency and a clear `"Showcase Demo Data"` status pill.
-  - **`MoveByMoveAnalyzer`**: Renders the pre-computed `FEATURED_MATCH_ANALYSIS` and an instant set of showcase demo matches in the match selector feed without calling the Chess.com API until the user explicitly connects their account.
+### Problem 1: Why `Personal Performance & Rating Analysis` showed `99.4%` over `10 PGN games` & `0.0` Blunders
+1. **1-Ply Static Comparison Bug in `analyzeMatchForDashboardFast` (`src/services/pgnAnalyzer.ts`)**:
+   - Previously, `analyzeMatchForDashboardFast` compared `evaluateBoardStaticCp` immediately before the user's move (`prevStaticCp`) against `evaluateBoardStaticCp` immediately after the user's 1-ply move (`afterStaticCp`) **before the opponent could recapture or reply**.
+   - Because almost any capture or piece development increases static material/PST on ply 1 prior to opponent recaptures, `winLoss` was `0` on ~98% of moves, yielding an artificial `99.4%` CAPS2 accuracy and `0.0` blunders.
+2. **10-Game Cap & Unused Archive `accuracies` (`src/services/chessComApi.ts` & `src/components/PerformanceDashboard.tsx`)**:
+   - `fetchRealPlayerMatchesWithStatus` defaulted to `limit = 10`, and `scanAllTimePlayerArchives` did not extract `rawGame.accuracies.white` / `rawGame.accuracies.black` across all monthly archives or aggregate all-time accuracy and tactical error rates across the player's career.
 
-### B. Prominent Top Account Input & Single-Source Synchronization
-- **High-Visibility Account Input (`HeroSection` + Section Headers)**:
-  - Upgrade the top landing page username form in `HeroSection.tsx` with a clear, high-contrast input and primary CTA button (**"Connect & Load My Account"** / **"Account laden & analysieren"**) plus an active connection badge once a username is loaded.
-  - Add an inline account connection bar in both `PerformanceDashboard.tsx` and `MoveByMoveAnalyzer.tsx` so users can also enter or switch their Chess.com username directly in those views.
-- **Unified Single-Source Account State (`App.tsx`)**:
-  - When a user types their Chess.com username and clicks the submit button in the `HeroSection` (or in the Navbar, Dashboard, or Match Analyzer), `App.tsx` updates the shared `connectedUser` state (`analyzedUser` & `loggedInUser`).
-  - All sections (`PerformanceDashboard`, `MoveByMoveAnalyzer`, `Navbar`, and `PersonalPuzzlesPage`) immediately synchronize to that single account and start fetching and analyzing the user's real Chess.com games, career statistics, and tactical blunders/puzzles.
-
-### C. Dedicated Board Flip Control & Top-Right Move Evaluation Badges
-- **Dedicated `"Flip Board"` Button & Full Orientation Sync (`MoveByMoveAnalyzer.tsx` & `ChesscomBoard.tsx`)**:
-  - Upgrade the board toolbar control to a clearly labeled **"Flip Board"** button (`Flip Board ⇅` showing current perspective `White` / `Black`) and add a quick-flip button directly beside the board header.
-  - Synchronize the vertical **Live Evaluation Bar** with `isFlipped` (`flex-col` when White is at the bottom, `flex-col-reverse` when Black is at the bottom) so the white and dark evaluation fill bars always match the top/bottom player orientation on screen.
-  - Ensure flipping the board cleanly rotates the 8×8 square order (`a8–h1` vs `h1–a8`), rank numbers (`1–8`), file letters (`a–h`), top/bottom player banners, and interactive legal move highlights without resetting or scrambling the active ply or sandbox state.
-- **Move Evaluation Badge Always at Top-Right of Moved Piece (`ChesscomBoard.tsx`)**:
-  - After every move (both in game replay and in interactive "What-If" sandbox moves), render the circular move-classification badge (`!!`, `!`, `★`, `👍`, `✓`, `📖`, `?!`, `?`, `✖`, `??`) anchored at the **top-right corner** (`-top-1.5 -right-1.5 z-30`) of the destination square (`toSquare`) right beside the moved piece in both standard and flipped board orientations.
+### Problem 2: Why the Middlegame Misclassified Trades, Decoys, and Pawn Breaks as Mistakes/Blunders
+1. **Odd-Ply (Ply 3) Un-Recaptured Horizon Bug in `computeMultiPvTacticalSearch` (`src/services/pgnAnalyzer.ts`)**:
+   - `computeMultiPvTacticalSearch` searched 3 half-moves (`depth = 3`) and stopped immediately after a 3rd-ply capture (`counter`) **without resolving recaptures (Quiescence / Static Exchange Evaluation)**.
+   - At `fenBefore` (Mover's turn), the mover got the 3rd-ply un-recaptured capture, inflating `evalBefore` by `+300cp` to `+900cp`.
+   - At `fenAfter` (Opponent's turn), the **opponent** got the 3rd-ply un-recaptured capture, shifting `evalAfter` by `-300cp` to `-900cp` in the opponent's favor.
+   - This created a false `400cp–800cp` evaluation drop on almost every middlegame move whenever piece tension existed on the board.
+2. **Lack of Trade, Decoy/Trap, and Middlegame Pawn-Break Recognition**:
+   - `classifyMoveChessCom1To1` and `inspectConcreteBoardFacts` did not check whether a capture sequence was an **Equal Trade** (`N=3 vs N/B=3`, `R=5 vs R=5`, `Q=9 vs Q=9`), a **Tactical Decoy / Deflection** (offering a piece on an attacked square where the engine's PV recaptures or wins material), or a **Positional Pawn Break / File-Opening Capture** in the middlegame.
 
 ---
 
-## 2. File-by-File Implementation Steps
+## 2. File-by-File Implementation Plan
 
-1. **`/src/App.tsx`**
-   - Initialize `analyzedUser` and `loggedInUser` to `null` (removing the `'Hikaru'` fallback prop) so the app starts in instant Showcase Demo Mode.
-   - Unify `handleAnalyzeUsername` and `handleLoginSuccess` so submitting a username at the top of the landing page (`HeroSection`) or in any component sets the active account across `PerformanceDashboard`, `MoveByMoveAnalyzer`, `Navbar`, and `PersonalPuzzlesPage`.
+### A. `/src/services/pgnAnalyzer.ts` — Quiescence Search, Tactical Recognition & Concrete English Explanations
+1. **Replace Odd-Ply Horizon with Full Quiescence Capture Resolution (SEE / Quiescence Search)**:
+   - Implement `quiescenceSearchCp(chess, alpha, beta, depthLeft)` so every leaf node of `computeMultiPvTacticalSearch` resolves all forcing capture/recapture chains until the position is tactically quiet.
+   - Ensure strict sign normalization so `cp` and `mate` from both Stockfish Web Worker (`stockfishBridge`), Lichess Cloud Eval, and the local Quiescence Alpha-Beta search are 100% consistent from the mover's perspective on every ply.
+2. **Explicit Detection of Equal Trades, Decoys/Traps, and Middlegame Pawn Breaks**:
+   - **Equal Trade Detection (`isEqualTrade`)**: Detect when a player captures a piece of equal value (`N/B=3`, `R=5`, `Q=9`, `P=1`) or initiates a recaptured exchange where net material after the exchange is equal and `winProbLoss <= 6.0%`. Always classify as `best` (`★`), `excellent` (`👍`), or `good` (`✓`) — never `inaccuracy` or `mistake`.
+   - **Tactical Decoy / Deflection / Trap Detection (`isDecoyOrTrap`)**: Detect when a player moves a piece/pawn onto an opponent-attacked square (or leaves a piece en prise) while the post-move Quiescence/Stockfish evaluation holds or improves (`winProbLoss <= 2.5%` and `winProbAfter >= 50%`) because the opponent's capture is refuted by a fork, pin, discovered attack, or recapture in the PV. Classify as `brilliant` (`!!`), `great` (`!`), or `best` (`★`).
+   - **Middlegame Positional Pawn Breaks & Tolerance Thresholds**:
+     - Recognize central/flank pawn breaks and file-opening pawn captures in the middlegame (moves 11–28).
+     - Calibrate middlegame `winProbLoss` thresholds:
+       - `best` / `excellent` / `good`: `0%` to `9.0%` Win% Loss (`<= 6.5%` for positional pawn breaks/captures is always at least `good`/`excellent`)
+       - `inaccuracy (?!)`: `9.0% < winProbLoss <= 15.0%`
+       - `mistake (?)`: `15.0% < winProbLoss <= 26.0%`
+       - `blunder (??)`: `winProbLoss > 26.0%` (or uncompensated loss of a piece / stepping into forced mate).
+3. **Concrete English Move Explanations with Piece Values (`P=1, N=3, B=3, R=5, Q=9`) & PV Sequences**:
+   - Rewrite `buildGroundedMoveExplanation` and `inspectConcreteBoardFacts` in crisp, concrete English:
+     - **Equal Trade**: *"Trades the knight on f6 for Black's bishop (3 vs 3 pts), simplifying the position while keeping a balanced evaluation (+0.2)."*
+     - **Tactical Decoy / Trap**: *"Strong tactical decoy! Places the knight on d5 where capturing it is met by 15. Bc4, recovering the material with a positional advantage."*
+     - **Positional Pawn Break / Capture**: *"Captures with the pawn on d5 (1 pt), opening the c-file for the rooks and gaining active central space."*
+     - **Real Mistake / Blunder**: State the exact hanging piece or tactical refutation with point values and the engine's best alternative (`Best was ... followed by ...`).
+4. **Fix `analyzeMatchForDashboardFast` with Quiescence-Resolved Multi-Ply Evaluation**:
+   - Use Official Chess.com `match.officialAccuracy` when present on the match record, and run Quiescence-resolved multi-ply evaluation across every ply so game accuracy (typically `68%–86%`), phase accuracies (Opening / Middlegame / Endgame), and blunder/mistake counts (`1.2–3.5` per game) are 100% realistic.
 
-2. **`/src/components/HeroSection.tsx`**
-   - Enhance the top username input and action button (`"Load My Account"` / `"Account laden"`) for unmistakable visual clarity and show an active synced status badge when an account is connected.
-
-3. **`/src/components/PerformanceDashboard.tsx`**
-   - Add a pre-computed `SHOWCASE_DEMO_DASHBOARD` dataset used whenever no username has been connected yet (`!username`), preventing any automatic `@Hikaru` API calls or archive scans on startup.
-   - Add a prominent inline username input + **"Load My Stats"** button in the dashboard header so users can also trigger or change the synced account directly from the dashboard.
-
-4. **`/src/components/MoveByMoveAnalyzer.tsx` & `/src/components/ChesscomBoard.tsx`**
-   - Skip automatic `fetchRealPlayerMatchesWithStatus` on mount when no account is connected; display `FEATURED_MATCH_ANALYSIS` and showcase demo matches until an account is submitted.
-   - Make the **"Flip Board"** button prominent in the board toolbar, rotate the top/bottom player strips and vertical Live Evaluation Bar when `isFlipped` is toggled, and keep the move-evaluation badge (`!!`, `!`, `★`, `👍`, `✓`, `📖`, `?!`, `?`, `✖`, `??`) anchored at the top-right corner next to the moved piece on its destination square.
+### B. `/src/services/chessComApi.ts` & `/src/components/PerformanceDashboard.tsx` — All-Time Career Accuracy & Error Telemetry
+1. **Extract Official Chess.com Accuracies & PGN Telemetry Across All Monthly Archives (`src/services/chessComApi.ts`)**:
+   - In `parseRawArchiveGameToCompactRecord`, extract `rawGame.accuracies.white` and `rawGame.accuracies.black` (when provided by Chess.com) as well as compact PGN move-quality metrics across archived games.
+   - Expand `fetchRealPlayerMatchesWithStatus` default limit from `10` to `50` games across recent monthly archives, and aggregate all-time career accuracy, phase accuracies, and blunder/mistake frequencies in `AllTimeCareerAggregate`.
+2. **Update `PerformanceDashboard.tsx` to Display True All-Time Career Metrics**:
+   - Remove the `10 PGN games` cap and display the real all-time accuracy and blunder/mistake frequency across all scanned career games (e.g., *"Across 1,842 Career Games"*), updating live as the Staged All-Time Career Archive Scanner progresses.

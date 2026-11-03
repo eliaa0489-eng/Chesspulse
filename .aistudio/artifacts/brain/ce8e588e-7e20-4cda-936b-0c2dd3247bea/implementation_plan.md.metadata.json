@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for removing automatic @Hikaru archive/match fetching on initial load in favor of an instant Showcase Demo profile, unifying single-source Chess.com account synchronization across HeroSection, PerformanceDashboard, MoveByMoveAnalyzer, and PersonalPuzzlesPage, and adding a dedicated Flip Board control that rotates board squares, coordinates, and evaluation bar while keeping move-evaluation badges anchored at the top-right of the moved piece.",
-  "updatedAt":  "2026-11-02T15:06:36.924536152Z",
-  "requestFeedback":  true,
-  "userFacing":  true
+  "summary": "Implementation plan for fixing Problem 1 (All-Time Personal Performance & Rating Analysis accuracy & blunder frequency across all career archives) and Problem 2 (Quiescence-resolved middlegame engine evaluation, Equal Trade / Decoy / Pawn Break recognition, and concrete English chess explanations).",
+  "updatedAt": "2026-11-03T13:33:35.582154798Z",
+  "requestFeedback": true,
+  "userFacing": true
 }

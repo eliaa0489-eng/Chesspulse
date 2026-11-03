@@ -94,6 +94,10 @@ const SHOWCASE_DEMO_MATCHES: ChessComMatch[] = [
     userColor: 'white',
     userWon: true,
     userResultText: 'Won by checkmate',
+    eco: 'C50',
+    openingName: 'Italian Game: Giuoco Pianissimo',
+    moveCount: 22,
+    officialAccuracy: { white: 88.4, black: 74.2 },
   },
   {
     id: 'demo-match-2',
@@ -108,6 +112,10 @@ const SHOWCASE_DEMO_MATCHES: ChessComMatch[] = [
     userColor: 'black',
     userWon: true,
     userResultText: 'Won by resignation',
+    eco: 'B12',
+    openingName: 'Caro-Kann Defense: Advance Variation',
+    moveCount: 16,
+    officialAccuracy: { white: 76.1, black: 86.9 },
   },
   {
     id: 'demo-match-3',
@@ -122,6 +130,10 @@ const SHOWCASE_DEMO_MATCHES: ChessComMatch[] = [
     userColor: 'white',
     userWon: 'draw',
     userResultText: 'Drawn by agreement',
+    eco: 'D02',
+    openingName: 'London System',
+    moveCount: 12,
+    officialAccuracy: { white: 84.5, black: 83.8 },
   },
 ];
 
@@ -284,7 +296,8 @@ export function MoveByMoveAnalyzer({
       });
   };
 
-  // Fetch real matches ONLY when a user account has been entered/connected
+  // Fetch lightweight match metadata ONLY when a user account has been entered/connected.
+  // Full move-by-move PGN Game Review runs lazily ONLY when the user clicks a specific match.
   useEffect(() => {
     const cleanUser = activeUsername.trim();
     if (!cleanUser) {
@@ -299,19 +312,16 @@ export function MoveByMoveAnalyzer({
     setIsLoadingMatches(true);
     setMatchErrorCode(undefined);
     setMatchErrorMessage(undefined);
+    setIsMatchFeedOpen(true);
 
-    fetchRealPlayerMatchesWithStatus(cleanUser)
+    fetchRealPlayerMatchesWithStatus(cleanUser, 25)
       .then((result) => {
         if (isCancelled) return;
         setRecentMatches(result.matches);
         setMatchErrorCode(result.code);
         setMatchErrorMessage(result.errorMessage);
         setIsLoadingMatches(false);
-
-        if (result.matches.length > 0 && userExplicitSearchRef.current) {
-          userExplicitSearchRef.current = false;
-          handleSelectMatch(result.matches[0], false);
-        }
+        userExplicitSearchRef.current = false;
       })
       .catch(() => {
         if (!isCancelled) {
@@ -640,7 +650,7 @@ export function MoveByMoveAnalyzer({
             </button>
           )}
 
-          {/* Toggle Last 10 Matches List */}
+          {/* Toggle Recent Matches List */}
           <button
             onClick={() => setIsMatchFeedOpen(!isMatchFeedOpen)}
             className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
@@ -648,7 +658,7 @@ export function MoveByMoveAnalyzer({
             <Swords className="w-3.5 h-3.5 text-emerald-600" />
             <span>
               {activeUsername
-                ? `Last 10 Games (${recentMatches.length})`
+                ? `Recent Matches (${recentMatches.length})`
                 : `Showcase Games (${recentMatches.length})`}
             </span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isMatchFeedOpen ? 'rotate-180' : ''}`} />

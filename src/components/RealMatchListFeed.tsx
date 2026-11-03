@@ -96,16 +96,16 @@ export function RealMatchListFeed({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
+      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Swords className="w-4 h-4 text-emerald-600" />
           <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-            Last {matches.length} Actual Chess.com Matches
+            Recent {matches.length} Chess.com Matches
             {searchedUsername ? ` • @${searchedUsername}` : ''}
           </h4>
         </div>
-        <span className="text-[11px] font-semibold text-slate-500">
-          Click any game to inspect PGN moves
+        <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+          Click any match to run on-demand Game Review
         </span>
       </div>
 
@@ -113,6 +113,10 @@ export function RealMatchListFeed({
         {matches.map((match) => {
           const isSelected = match.id === selectedMatchId;
           const opponent = match.userColor === 'white' ? match.black : match.white;
+          const userOfficialAcc =
+            match.userColor === 'white'
+              ? match.officialAccuracy?.white
+              : match.officialAccuracy?.black;
 
           return (
             <button
@@ -124,7 +128,7 @@ export function RealMatchListFeed({
                   : 'hover:bg-slate-50'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 {/* Result Indicator Badge */}
                 <div
                   className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${
@@ -138,9 +142,9 @@ export function RealMatchListFeed({
                   {match.userWon === true ? 'W' : match.userWon === 'draw' ? 'D' : 'L'}
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-900">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900 truncate">
                       vs {opponent.username}
                     </span>
                     <span className="text-[11px] font-mono text-slate-500 tabular-nums">
@@ -149,9 +153,14 @@ export function RealMatchListFeed({
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
                       {match.userColor === 'white' ? '⚪ White' : '⚫ Black'}
                     </span>
+                    {typeof userOfficialAcc === 'number' && (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 tabular-nums">
+                        {userOfficialAcc}% Acc
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2.5 text-[11px] text-slate-500 mt-0.5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
                     <span className="font-semibold text-slate-700">{match.timeControl}</span>
                     <span>•</span>
                     <span
@@ -165,17 +174,34 @@ export function RealMatchListFeed({
                     >
                       {match.userResultText}
                     </span>
+                    {match.openingName && (
+                      <>
+                        <span>•</span>
+                        <span className="text-slate-600 truncate max-w-[180px] sm:max-w-[260px]">
+                          {match.eco ? `${match.eco}: ` : ''}
+                          {match.openingName}
+                        </span>
+                      </>
+                    )}
+                    {typeof match.moveCount === 'number' && match.moveCount > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono text-slate-500 tabular-nums">
+                          {match.moveCount} moves
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 text-right">
+              <div className="flex items-center gap-2 text-right shrink-0 ml-2">
                 <div className="hidden sm:block">
                   <span className="text-[10px] text-slate-400 block">
                     {match.dateFormatted}
                   </span>
                   <span className="text-[11px] font-bold text-emerald-700">
-                    Analyze Moves →
+                    {isSelected ? 'Analyzed ✓' : 'Click to Analyze →'}
                   </span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400" />

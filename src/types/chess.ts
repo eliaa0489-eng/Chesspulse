@@ -142,6 +142,7 @@ export interface ChessComMatch {
   userResultText: string;
   eco?: string;
   openingName?: string;
+  moveCount?: number;
   officialAccuracy?: { white?: number; black?: number };
 }
 
