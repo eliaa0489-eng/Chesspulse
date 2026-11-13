@@ -1835,7 +1835,7 @@ function getMatchCacheKey(pgn: string, targetUsername: string): string {
   return `${targetUsername.toLowerCase()}::${pgn.length}::${head}::${tail}`;
 }
 
-const SESSION_MATCH_CACHE_PREFIX = 'chesspulse_match_v3::';
+const SESSION_MATCH_CACHE_PREFIX = 'chesspulse_match_v4::';
 
 export function getCachedMatchAnalysis(cacheKey: string): FullMatchAnalysis | null {
   const mem = analyzedMatchCache.get(cacheKey);
@@ -2380,6 +2380,47 @@ function processPlyStep(
       ? '!'
       : '';
 
+  // Pre-compute bestMoveUci (from/to) and PV follow-up continuation squares for 0ms board arrow rendering
+  const usePlayedAsBest =
+    isExactBest ||
+    classification === 'book' ||
+    classification === 'brilliant' ||
+    classification === 'great' ||
+    classification === 'best' ||
+    !evalBeforeResult.bestMoveFrom ||
+    !evalBeforeResult.bestMoveTo;
+
+  const resolvedBestFrom = usePlayedAsBest ? moveObj.from : evalBeforeResult.bestMoveFrom;
+  const resolvedBestTo = usePlayedAsBest ? moveObj.to : evalBeforeResult.bestMoveTo;
+  const resolvedBestUci = `${resolvedBestFrom}${resolvedBestTo}`;
+
+  let followUpFrom: string | undefined;
+  let followUpTo: string | undefined;
+  let followUpSan: string | undefined;
+
+  if (!usePlayedAsBest && evalBeforeResult.pvSan && evalBeforeResult.pvSan.length >= 2) {
+    try {
+      const pvSim = new Chess(fenBefore);
+      const firstMove = pvSim.move(evalBeforeResult.pvSan[0]);
+      if (firstMove) {
+        const secondMove = pvSim.move(evalBeforeResult.pvSan[1]);
+        if (secondMove) {
+          followUpFrom = secondMove.from;
+          followUpTo = secondMove.to;
+          followUpSan = secondMove.san;
+        }
+      }
+    } catch {
+      // Ignore invalid PV continuation
+    }
+  }
+
+  if (!followUpFrom && evalAfterResult.bestMoveFrom && evalAfterResult.bestMoveTo) {
+    followUpFrom = evalAfterResult.bestMoveFrom;
+    followUpTo = evalAfterResult.bestMoveTo;
+    followUpSan = evalAfterResult.bestMoveSan;
+  }
+
   accumulators.plies.push({
     plyIndex: index,
     moveNumber,
@@ -2397,6 +2438,12 @@ function processPlyStep(
     classification,
     explanation,
     bestAlternative,
+    bestMoveUci: resolvedBestUci,
+    bestMoveFrom: resolvedBestFrom,
+    bestMoveTo: resolvedBestTo,
+    followUpFrom,
+    followUpTo,
+    followUpSan,
     pvLine,
     multiPv: evalBeforeResult.multiPv,
     outOfBook,
@@ -2550,6 +2597,12 @@ function finalizeMatchAnalysis(
       moveAccuracy: 100,
       classification: 'book',
       explanation: '1. e4 📖 is a standard opening book move staking claim to the center.',
+      bestMoveUci: 'e2e4',
+      bestMoveFrom: 'e2',
+      bestMoveTo: 'e4',
+      followUpFrom: 'e7',
+      followUpTo: 'e5',
+      followUpSan: 'e5',
       pvLine: '1. e4 e5 2. Nf3',
       engineSource: 'alpha-beta',
       engineDepth: 18,
@@ -3192,6 +3245,19 @@ export async function enrichAnalysisWithCloudEval(
           ? '!'
           : '';
 
+      const useCloudPlayedAsBest =
+        isExactBest ||
+        classification === 'book' ||
+        classification === 'brilliant' ||
+        classification === 'great' ||
+        classification === 'best' ||
+        !verifiedPv?.bestMoveFrom ||
+        !verifiedPv?.bestMoveTo;
+
+      const cloudBestFrom = useCloudPlayedAsBest ? moveObj.from : verifiedPv.bestMoveFrom;
+      const cloudBestTo = useCloudPlayedAsBest ? moveObj.to : verifiedPv.bestMoveTo;
+      const cloudBestUci = `${cloudBestFrom}${cloudBestTo}`;
+
       updatedCount++;
       return {
         ...ply,
@@ -3204,6 +3270,9 @@ export async function enrichAnalysisWithCloudEval(
         classification,
         explanation,
         bestAlternative,
+        bestMoveUci: cloudBestUci,
+        bestMoveFrom: cloudBestFrom,
+        bestMoveTo: cloudBestTo,
         pvLine,
         multiPv: cloudMultiPv.length > 0 ? cloudMultiPv : ply.multiPv,
         engineSource: 'lichess-cloud' as const,

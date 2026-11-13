@@ -347,6 +347,7 @@ function buildFeaturedMatchAnalysis(): FullMatchAnalysis {
   const plies: AnalyzedPly[] = [];
 
   rawMoves.forEach((seed, index) => {
+    const fenBefore = chess.fen();
     const moveObj = chess.move(seed.san);
     const fen = chess.fen();
     const moveNumber = Math.floor(index / 2) + 1;
@@ -366,19 +367,77 @@ function buildFeaturedMatchAnalysis(): FullMatchAnalysis {
         ? `${moveNumber}. ${seed.san}${symbolSuffix}`
         : `${moveNumber}... ${seed.san}${symbolSuffix}`;
 
+    const playedFrom = moveObj ? moveObj.from : 'e2';
+    const playedTo = moveObj ? moveObj.to : 'e4';
+
+    let bestMoveFrom = playedFrom;
+    let bestMoveTo = playedTo;
+
+    if (seed.bestAlternative) {
+      // Extract SAN token from strings like "8... h5 (+0.3)" or "17... a4 (+0.9)"
+      const altMatch = seed.bestAlternative.match(/^\d+\.+\s*([^\s(]+)/);
+      const altSan = altMatch ? altMatch[1].replace(/[?!+#]+$/g, '') : '';
+      if (altSan) {
+        try {
+          const altChess = new Chess(fenBefore);
+          const altMove = altChess.move(altSan);
+          if (altMove) {
+            bestMoveFrom = altMove.from;
+            bestMoveTo = altMove.to;
+          }
+        } catch {
+          // Fallback to played move squares
+        }
+      }
+    }
+
+    let followUpFrom: string | undefined;
+    let followUpTo: string | undefined;
+    let followUpSan: string | undefined;
+
+    if (seed.pvLine) {
+      try {
+        const tokens = seed.pvLine
+          .replace(/\d+\.+/g, ' ')
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+        if (tokens.length >= 2) {
+          const pvChess = new Chess(fenBefore);
+          const m1 = pvChess.move(tokens[0]);
+          if (m1) {
+            const m2 = pvChess.move(tokens[1]);
+            if (m2) {
+              followUpFrom = m2.from;
+              followUpTo = m2.to;
+              followUpSan = m2.san;
+            }
+          }
+        }
+      } catch {
+        // Ignore PV parse error
+      }
+    }
+
     plies.push({
       plyIndex: index,
       moveNumber,
       color,
       notation,
-      fromSquare: moveObj ? moveObj.from : 'e2',
-      toSquare: moveObj ? moveObj.to : 'e4',
+      fromSquare: playedFrom,
+      toSquare: playedTo,
       fen,
       evalScore: seed.evalScore,
       evalDelta: seed.evalDelta,
       classification: seed.classification,
       explanation: seed.explanation,
       bestAlternative: seed.bestAlternative,
+      bestMoveUci: `${bestMoveFrom}${bestMoveTo}`,
+      bestMoveFrom,
+      bestMoveTo,
+      followUpFrom,
+      followUpTo,
+      followUpSan,
       pvLine: seed.pvLine,
       engineSource: 'lichess-cloud',
       tacticalThreat: seed.tacticalThreat,

@@ -7,12 +7,9 @@ import { KeyMetricsStrip } from './components/KeyMetricsStrip';
 import { CoreFeaturesSection } from './components/CoreFeaturesSection';
 import { PerformanceDashboard } from './components/PerformanceDashboard';
 import { MoveByMoveAnalyzer } from './components/MoveByMoveAnalyzer';
-import { PricingSection } from './components/PricingSection';
-import { FaqSection } from './components/FaqSection';
 import { BottomCtaBanner } from './components/BottomCtaBanner';
 import { Footer } from './components/Footer';
 import type { ShareData } from './components/ShareModal';
-import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { sanitizeChessHandle } from './services/chessComApi';
 import {
@@ -33,9 +30,6 @@ const NotFoundPage = lazy(() =>
 );
 const AnalysisModal = lazy(() =>
   import('./components/AnalysisModal').then((m) => ({ default: m.AnalysisModal }))
-);
-const PlanModal = lazy(() =>
-  import('./components/PlanModal').then((m) => ({ default: m.PlanModal }))
 );
 const AuthModal = lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -100,21 +94,9 @@ export default function App() {
   // User account state — starts as null on initial load (Showcase Demo Mode) until user connects their handle
   const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
 
-  // Paying subscriber state (saved in localStorage)
-  const [isPayingUser, setIsPayingUser] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('chesspulse_plan') !== null;
-    } catch {
-      return false;
-    }
-  });
-
   // Modal & synced account state
   const [analyzedUser, setAnalyzedUser] = useState<string | null>(null);
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
-
-  const [selectedPlan, setSelectedPlan] = useState<{ name: string; price: string } | null>(null);
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authTargetRoute, setAuthTargetRoute] = useState<AppRoute>('home');
@@ -270,12 +252,6 @@ export default function App() {
     }, 150);
   };
 
-  const handleSelectPlan = (planName: string, price: string) => {
-    setSelectedPlan({ name: planName, price });
-    setIsPlanModalOpen(true);
-    trackAnalyticsEvent('plan_modal_opened', { planName });
-  };
-
   const handleStepDemo = (stepNumber: number) => {
     if (stepNumber === 1 || stepNumber === 2) {
       if (loggedInUser || analyzedUser) {
@@ -325,7 +301,6 @@ export default function App() {
         onOpenScan={() => navigateTo('puzzles')}
         onOpenProfileStats={() => setIsProfileStatsModalOpen(true)}
         onOpenShare={handleDefaultShare}
-        isPayingUser={isPayingUser}
       />
 
       {/* Conditional Page Rendering with Code-Splitting Suspense & Global ErrorBoundary */}
@@ -347,7 +322,6 @@ export default function App() {
               onLogout={handleLogout}
               onBackToHome={() => navigateTo('home')}
               onOpenShare={handleOpenShare}
-              isPayingUser={isPayingUser}
             />
           ) : currentPage === 'impressum' || currentPage === 'datenschutz' ? (
             <LegalPages page={currentPage} onNavigate={(page) => navigateTo(page)} />
@@ -431,20 +405,14 @@ export default function App() {
               {/* 6. Core Features Section */}
               <CoreFeaturesSection onTryPuzzle={() => navigateTo('puzzles')} />
 
-              {/* 7. ChessPulse Pricing Section */}
-              <PricingSection onSelectPlan={handleSelectPlan} />
-
-              {/* 8. Interactive FAQ */}
-              <FaqSection />
-
-              {/* 9. Bottom CTA Banner */}
+              {/* 7. Bottom CTA Banner */}
               <BottomCtaBanner onAnalyzeUsername={handleAnalyzeUsername} />
             </main>
           )}
         </Suspense>
       </ErrorBoundary>
 
-      {/* 10. Minimal Footer */}
+      {/* 8. Minimal Footer */}
       <Footer
         onOpenCompliance={() => setPolicyType('compliance')}
         onOpenPrivacy={() => navigateTo('datenschutz')}
@@ -455,9 +423,6 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
       />
 
-      {/* Non-Intrusive Apple/Stripe Cookie Consent Banner */}
-      <CookieConsentBanner onNavigateLegal={(legalPage) => navigateTo(legalPage)} />
-
       {/* Interactive Modals (Lazy-Loaded on Demand) */}
       <Suspense fallback={null}>
         {isAnalysisModalOpen && (
@@ -467,18 +432,6 @@ export default function App() {
             onClose={() => setIsAnalysisModalOpen(false)}
             onSelectPuzzle={() => {
               handleLogin(analyzedUser || 'Hikaru');
-            }}
-          />
-        )}
-
-        {selectedPlan && isPlanModalOpen && (
-          <PlanModal
-            planName={selectedPlan.name}
-            price={selectedPlan.price}
-            isOpen={isPlanModalOpen}
-            onClose={() => setIsPlanModalOpen(false)}
-            onPlanActivated={() => {
-              setIsPayingUser(true);
             }}
           />
         )}

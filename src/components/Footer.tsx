@@ -228,11 +228,11 @@ export function Footer({
               </li>
               <li>
                 <a
-                  href="#pricing"
-                  onClick={(e) => handleSectionLink(e, 'pricing')}
+                  href="#performance-dashboard"
+                  onClick={(e) => handleSectionLink(e, 'performance-dashboard')}
                   className="hover:text-white transition-colors"
                 >
-                  Club &amp; Coach Enterprise
+                  All-Time Career Telemetry
                 </a>
               </li>
             </ul>
@@ -273,11 +273,11 @@ export function Footer({
               </li>
               <li>
                 <a
-                  href="#pricing"
-                  onClick={(e) => handleSectionLink(e, 'pricing')}
+                  href="#analyzer"
+                  onClick={(e) => handleSectionLink(e, 'analyzer')}
                   className="hover:text-white transition-colors"
                 >
-                  3 Free Daily Scans
+                  Interactive What-If Sandbox
                 </a>
               </li>
             </ul>
@@ -318,11 +318,11 @@ export function Footer({
               </li>
               <li>
                 <a
-                  href="#pricing"
-                  onClick={(e) => handleSectionLink(e, 'pricing')}
+                  href="#analyzer"
+                  onClick={(e) => handleSectionLink(e, 'analyzer')}
                   className="hover:text-white transition-colors"
                 >
-                  Free Public Beta Tier
+                  Best-Move Board Arrows
                 </a>
               </li>
             </ul>

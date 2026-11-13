@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Chess, Square } from 'chess.js';
-import { MoveClassification } from '../types/chess';
+import { MoveClassification, BoardArrow } from '../types/chess';
 import { EvalBadge } from './EvalBadge';
 import { chessAudio } from '../services/chessSound';
 
@@ -405,6 +405,7 @@ interface ChesscomBoardProps {
   fromSquare?: string;
   toSquare?: string;
   classification?: MoveClassification;
+  arrows?: BoardArrow[];
   isFlipped?: boolean;
   interactive?: boolean;
   className?: string;
@@ -412,11 +413,63 @@ interface ChesscomBoardProps {
   allowedTurnColor?: 'w' | 'b' | null;
 }
 
+/**
+ * Converts an algebraic square ('a1'..'h8') to SVG center coordinates in an 800x800 grid (100x100 per square),
+ * accurately flipping both file and rank when `isFlipped` is true.
+ */
+function squareToSvgCenter(square: string, isFlipped: boolean): { x: number; y: number } | null {
+  if (!square || square.length < 2) return null;
+  const fileCode = square.toLowerCase().charCodeAt(0) - 97; // 'a' -> 0 .. 'h' -> 7
+  const rankNum = parseInt(square[1], 10); // '1' -> 1 .. '8' -> 8
+  if (fileCode < 0 || fileCode > 7 || isNaN(rankNum) || rankNum < 1 || rankNum > 8) {
+    return null;
+  }
+  const actualRow = 8 - rankNum; // 0 (rank 8) .. 7 (rank 1)
+  const actualCol = fileCode; // 0 (file a) .. 7 (file h)
+
+  const displayRow = isFlipped ? 7 - actualRow : actualRow;
+  const displayCol = isFlipped ? 7 - actualCol : actualCol;
+
+  return {
+    x: displayCol * 100 + 50,
+    y: displayRow * 100 + 50,
+  };
+}
+
+/**
+ * Returns authentic Chess.com Game Review square highlight tint based on the played move's classification.
+ */
+function getSquareHighlightRgba(classification?: MoveClassification, isToSquare?: boolean): string {
+  const alpha = isToSquare ? 0.52 : 0.42;
+  switch (classification) {
+    case 'brilliant':
+      return `rgba(27, 172, 166, ${alpha})`; // #1baca6 Cyan/Teal
+    case 'great':
+      return `rgba(92, 139, 176, ${alpha})`; // #5c8bb0 Blue
+    case 'best':
+      return `rgba(129, 182, 76, ${alpha})`; // #81b64c Classic Chess.com Green
+    case 'excellent':
+    case 'good':
+      return `rgba(150, 188, 75, ${alpha})`; // #96bc4b Soft Green
+    case 'inaccuracy':
+      return `rgba(247, 198, 49, ${isToSquare ? 0.56 : 0.46})`; // #f7c631 Warm Yellow-Orange
+    case 'mistake':
+      return `rgba(255, 164, 89, ${isToSquare ? 0.56 : 0.46})`; // #ffa459 Chess.com Orange
+    case 'miss':
+    case 'blunder':
+      return `rgba(250, 65, 45, ${isToSquare ? 0.56 : 0.46})`; // #fa412d Chess.com Crimson Red
+    case 'book':
+    default:
+      return 'rgba(245, 246, 130, 0.55)';
+  }
+}
+
 export function ChesscomBoard({
   fen,
   fromSquare,
   toSquare,
   classification,
+  arrows = [],
   isFlipped = false,
   interactive = false,
   className,
@@ -570,6 +623,9 @@ export function ChesscomBoard({
     setDraggingSquare(null);
   };
 
+  // STRICT SINGLE-ARROW RULE: Never render more than ONE arrow on the board at any time
+  const singleArrow = arrows.length > 0 ? arrows.slice(0, 1) : [];
+
   return (
     <div
       className={`w-full min-w-[270px] sm:min-w-[480px] lg:min-w-[540px] max-w-[720px] aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-[#262421] bg-[#262421] p-1.5 select-none relative transition-all duration-300 ${
@@ -607,11 +663,14 @@ export function ChesscomBoard({
                 className="relative flex items-center justify-center cursor-pointer transition-colors"
                 style={{ backgroundColor: squareBgHex, opacity: 1 }}
               >
-                {/* Soft Tournament Yellow-Green Last Move Highlight: rgba(245, 246, 130, 0.55) */}
+                {/* Authentic Chess.com Square Highlight Tinting on fromSquare & toSquare */}
                 {isLastMoveSquare && !isSelected && (
                   <div
                     className="absolute inset-0 pointer-events-none"
-                    style={{ backgroundColor: 'rgba(245, 246, 130, 0.55)', zIndex: 1 }}
+                    style={{
+                      backgroundColor: getSquareHighlightRgba(classification, isTo),
+                      zIndex: 1,
+                    }}
                   />
                 )}
 
@@ -690,6 +749,77 @@ export function ChesscomBoard({
               </div>
             );
           })
+        )}
+
+        {/* Strict Single-Arrow Chess.com SVG Best-Move Overlay Layer (opacity: 0.64) */}
+        {singleArrow.length > 0 && (
+          <svg
+            viewBox="0 0 800 800"
+            className="absolute inset-0 w-full h-full pointer-events-none select-none"
+            style={{ zIndex: 25 }}
+            shapeRendering="geometricPrecision"
+          >
+            <defs>
+              <filter id="chessArrowShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#000000" floodOpacity="0.32" />
+              </filter>
+            </defs>
+            {singleArrow.map((arrow, idx) => {
+              const start = squareToSvgCenter(arrow.from, isFlipped);
+              const end = squareToSvgCenter(arrow.to, isFlipped);
+              if (!start || !end) return null;
+
+              const dx = end.x - start.x;
+              const dy = end.y - start.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist < 10) return null;
+
+              const ux = dx / dist;
+              const uy = dy / dist;
+              const px = -uy;
+              const py = ux;
+
+              // Sleek Chess.com single-arrow geometry stopping short of square edges & top-right badge
+              const startOffset = 18;
+              const tipOffset = 16;
+              const headLength = 34;
+              const headHalfWidth = 20.5;
+              const shaftHalfWidth = 8.5;
+
+              const x1 = start.x + ux * startOffset;
+              const y1 = start.y + uy * startOffset;
+              const tipX = end.x - ux * tipOffset;
+              const tipY = end.y - uy * tipOffset;
+              const neckX = tipX - ux * headLength;
+              const neckY = tipY - uy * headLength;
+
+              const polyPoints = [
+                `${x1 + px * shaftHalfWidth},${y1 + py * shaftHalfWidth}`,
+                `${neckX + px * shaftHalfWidth},${neckY + py * shaftHalfWidth}`,
+                `${neckX + px * headHalfWidth},${neckY + py * headHalfWidth}`,
+                `${tipX},${tipY}`,
+                `${neckX - px * headHalfWidth},${neckY - py * headHalfWidth}`,
+                `${neckX - px * shaftHalfWidth},${neckY - py * shaftHalfWidth}`,
+                `${x1 - px * shaftHalfWidth},${y1 - py * shaftHalfWidth}`,
+              ].join(' ');
+
+              return (
+                <g
+                  key={`${arrow.from}-${arrow.to}-${idx}`}
+                  filter="url(#chessArrowShadow)"
+                  opacity={0.64}
+                >
+                  <polygon
+                    points={polyPoints}
+                    fill={arrow.color || '#81b64c'}
+                    stroke="#ffffff"
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              );
+            })}
+          </svg>
         )}
       </div>
     </div>

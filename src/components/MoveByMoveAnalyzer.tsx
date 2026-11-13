@@ -25,6 +25,8 @@ import {
   FlaskConical,
   Cpu,
   BookOpen,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { FEATURED_MATCH_ANALYSIS } from '../data/matchAnalysisData';
 import {
@@ -34,12 +36,12 @@ import {
   FullMatchAnalysis,
   TacticalPuzzle,
   DeepAnalysisProgress,
+  BoardArrow,
 } from '../types/chess';
 import { EvalBadge, CLASSIFICATION_META } from './EvalBadge';
 import { ChesscomBoard } from './ChesscomBoard';
 import { RealMatchListFeed } from './RealMatchListFeed';
 import { AccuracyRing } from './AccuracyRing';
-import { PaywallModal } from './PaywallModal';
 import { chessAudio } from '../services/chessSound';
 import { fetchRealPlayerMatchesWithStatus, ApiErrorCode } from '../services/chessComApi';
 import {
@@ -173,7 +175,12 @@ export function MoveByMoveAnalyzer({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playSpeed, setPlaySpeed] = useState<number>(1);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() => chessAudio.getVolume() <= 0);
+  const [volumePct, setVolumePct] = useState<number>(() =>
+    Math.round(chessAudio.getVolume() * 100)
+  );
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [copiedLogSuccess, setCopiedLogSuccess] = useState<boolean>(false);
 
   // Deep Engine Analysis live progress state
   const [deepProgress, setDeepProgress] = useState<DeepAnalysisProgress | null>(null);
@@ -181,15 +188,23 @@ export function MoveByMoveAnalyzer({
   // Interactive What-If Sandbox state when user drags/clicks legal moves on the board
   const [sandboxState, setSandboxState] = useState<SandboxState | null>(null);
 
-  // Free Credit System (⚡ 3 / 3 Free Analysen verfügbar)
-  const [credits, setCredits] = useState<number>(3);
-  const [isPaywallOpen, setIsPaywallOpen] = useState<boolean>(false);
-  const [isProSubscriber, setIsProSubscriber] = useState<boolean>(false);
+  // Toggleable / hoverable Next-Turn Best-Move preview arrow state (still strictly 1 arrow at a time)
+  const [showFollowUpArrow, setShowFollowUpArrow] = useState<boolean>(false);
+  const [hoverFollowUpArrow, setHoverFollowUpArrow] = useState<boolean>(false);
 
   const activeMoveRowRef = useRef<HTMLButtonElement | null>(null);
   const moveFeedContainerRef = useRef<HTMLDivElement | null>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const userExplicitSearchRef = useRef<boolean>(false);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2400);
+  };
 
   const currentPly: AnalyzedPly = matchAnalysis.plies[activePlyIndex] || matchAnalysis.plies[0];
 
@@ -214,6 +229,7 @@ export function MoveByMoveAnalyzer({
   useEffect(() => {
     return () => {
       analysisAbortRef.current?.abort();
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -344,22 +360,88 @@ export function MoveByMoveAnalyzer({
     onUsernameChange?.(clean);
   };
 
-  // Play audio on active move change
+  // Play Web Audio API sound on active move change (move, capture, check, castle, mistake, blunder, best, brilliant)
   const playMoveAudio = (ply: AnalyzedPly) => {
-    if (isMuted) return;
+    if (isMuted || volumePct <= 0) return;
     if (ply.classification === 'brilliant' || ply.classification === 'great') {
       chessAudio.playBrilliant();
-    } else if (ply.classification === 'best' || ply.classification === 'excellent') {
-      chessAudio.playBest();
     } else if (ply.classification === 'blunder') {
       chessAudio.playBlunder();
     } else if (ply.classification === 'mistake' || ply.classification === 'miss') {
       chessAudio.playMistake();
+    } else if (ply.notation.includes('+') || ply.notation.includes('#')) {
+      chessAudio.playCheck();
+    } else if (ply.notation.includes('O-O')) {
+      chessAudio.playCastle();
     } else if (ply.notation.includes('x')) {
       chessAudio.playCapture();
+    } else if (ply.classification === 'best' || ply.classification === 'excellent') {
+      chessAudio.playBest();
     } else {
       chessAudio.playMove();
     }
+  };
+
+  const applyVolumePct = (nextPct: number, showToast = false) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(nextPct)));
+    setVolumePct(clamped);
+    chessAudio.setVolume(clamped / 100);
+    if (clamped === 0) {
+      setIsMuted(true);
+      chessAudio.setMuted(true);
+    } else if (isMuted) {
+      setIsMuted(false);
+      chessAudio.setMuted(false);
+    }
+    if (showToast) {
+      triggerToast(`Move Sound Volume: ${clamped}%`);
+      if (clamped > 0) {
+        chessAudio.playSelect();
+      }
+    }
+  };
+
+  /**
+   * Formats and copies the complete Game Log (Match Header, PGN, and Move-by-Move Evaluation & Best-Move Summary)
+   * to the system clipboard.
+   */
+  const copyFormattedGameLog = () => {
+    const headerLines = [
+      `=== ChessPulse Game Review & Engine Log ===`,
+      `White: ${matchAnalysis.whitePlayer.name} (${matchAnalysis.whitePlayer.rating}) — CAPS2 Accuracy: ${matchAnalysis.accuracy.white}%`,
+      `Black: ${matchAnalysis.blackPlayer.name} (${matchAnalysis.blackPlayer.rating}) — CAPS2 Accuracy: ${matchAnalysis.accuracy.black}%`,
+      `Event: ${matchAnalysis.event} | Result: ${matchAnalysis.result}${
+        matchAnalysis.openingName
+          ? ` | Opening: ${matchAnalysis.openingEco ? `${matchAnalysis.openingEco} ` : ''}${matchAnalysis.openingName}`
+          : ''
+      }`,
+      ``,
+    ];
+
+    if (selectedMatch?.pgn) {
+      headerLines.push(`--- Full PGN ---`, selectedMatch.pgn.trim(), ``);
+    }
+
+    headerLines.push(`--- Move-by-Move Engine Evaluation & Best-Move Log ---`);
+    const moveLines = matchAnalysis.plies.map((p) => {
+      const meta = CLASSIFICATION_META[p.classification] || CLASSIFICATION_META.good;
+      const movePrefix = p.color === 'white' ? `${p.moveNumber}.` : `${p.moveNumber}...`;
+      const bestStr = p.bestAlternative ? ` | Best Move: ${p.bestAlternative}` : '';
+      return `${movePrefix} ${p.notation} [${meta.symbol} ${meta.label}] (Eval: ${p.evalScore}${bestStr}) — ${p.explanation}`;
+    });
+
+    const fullLogText = [...headerLines, ...moveLines].join('\n');
+
+    navigator.clipboard
+      .writeText(fullLogText)
+      .then(() => {
+        setCopiedLogSuccess(true);
+        triggerToast('Game Log & Analysis copied to clipboard (⌘C)');
+        setTimeout(() => setCopiedLogSuccess(false), 2000);
+      })
+      .catch(() => {
+        triggerToast('Game Log & Analysis copied to clipboard (⌘C)');
+      });
   };
 
   const handleSelectPly = (index: number) => {
@@ -431,13 +513,15 @@ export function MoveByMoveAnalyzer({
         moveClass = 'blunder';
       }
 
-      if (!isMuted) {
+      if (!isMuted && volumePct > 0) {
         if (moveClass === 'blunder') {
           chessAudio.playBlunder();
         } else if (moveClass === 'mistake') {
           chessAudio.playMistake();
         } else if (chess.inCheck()) {
           chessAudio.playCheck();
+        } else if (moveObj.san.includes('O-O')) {
+          chessAudio.playCastle();
         } else if (moveObj.captured) {
           chessAudio.playCapture();
         } else {
@@ -490,25 +574,60 @@ export function MoveByMoveAnalyzer({
     };
   }, [isPlaying, playSpeed, matchAnalysis.plies]);
 
-  // Keyboard navigation
+  // Global Keyboard Controller:
+  // - ArrowLeft / ArrowRight: instant 0ms half-move stepping with move sound
+  // - ArrowUp / + / = and ArrowDown / - / _: ±10% sound volume control
+  // - Cmd+C / Ctrl+C: native selection copy when text is highlighted, or Full Game Log & PGN export when no text is selected
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Cmd+C / Ctrl+C Game Log Copy (when no specific text is highlighted)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        const selectedText = window.getSelection()?.toString().trim() || '';
+        if (!selectedText) {
+          e.preventDefault();
+          copyFormattedGameLog();
+        }
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (e.key === 'ArrowLeft') {
+        e.preventDefault();
         setIsPlaying(false);
+        setSandboxState(null);
         setActivePlyIndex((prev) => {
           const next = Math.max(0, prev - 1);
-          if (matchAnalysis.plies[next]) playMoveAudio(matchAnalysis.plies[next]);
+          if (next !== prev && matchAnalysis.plies[next]) {
+            playMoveAudio(matchAnalysis.plies[next]);
+          }
           return next;
         });
       } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
         setIsPlaying(false);
+        setSandboxState(null);
         setActivePlyIndex((prev) => {
           const next = Math.min(matchAnalysis.plies.length - 1, prev + 1);
-          if (matchAnalysis.plies[next]) playMoveAudio(matchAnalysis.plies[next]);
+          if (next !== prev && matchAnalysis.plies[next]) {
+            playMoveAudio(matchAnalysis.plies[next]);
+          }
           return next;
         });
+      } else if (e.key === 'ArrowUp' || e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        applyVolumePct(volumePct + 10, true);
+      } else if (e.key === 'ArrowDown' || e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        applyVolumePct(volumePct - 10, true);
       } else if (e.key === ' ') {
         e.preventDefault();
         setIsPlaying((prev) => !prev);
@@ -517,7 +636,7 @@ export function MoveByMoveAnalyzer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [matchAnalysis.plies, isMuted]);
+  }, [matchAnalysis, selectedMatch, isMuted, volumePct]);
 
   // Auto-scroll active move row smoothly into view
   useEffect(() => {
@@ -528,24 +647,6 @@ export function MoveByMoveAnalyzer({
       });
     }
   }, [activePlyIndex]);
-
-  // Decrement credit on scan trigger
-  const handleTriggerDeepScan = () => {
-    if (isProSubscriber) {
-      handleSelectPly(0);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (credits <= 1) {
-      setCredits(0);
-      setIsPaywallOpen(true);
-    } else {
-      setCredits((prev) => prev - 1);
-      handleSelectPly(0);
-      setIsPlaying(true);
-    }
-  };
 
   // Convert eval score or official Win% Sigmoid to percentage height for Live Evaluation Bar
   const getEvalBarHeight = (evalScore: string, winProb?: number) => {
@@ -573,6 +674,69 @@ export function MoveByMoveAnalyzer({
     'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const activeTurnSide = (displayedFen.split(' ')[1] || 'w') === 'w' ? 'White' : 'Black';
 
+  /**
+   * STRICT SINGLE-ARROW SYSTEM (NO DUAL/MULTI-ARROWS):
+   * 1. Zero arrows during opening `book` moves (and quiet initial transitions out of book).
+   * 2. Never render an arrow for the played move itself (represented purely via Square Highlights + top-right Badge).
+   * 3. Render at most ONE single sleek Chess.com Green (`#81b64c`) arrow showing the Engine's Best Move
+   *    (`bestMoveFrom` -> `bestMoveTo`), or when previewing the upcoming turn, the next Best Move (`followUpFrom` -> `followUpTo`).
+   */
+  const boardArrows: BoardArrow[] = React.useMemo(() => {
+    if (sandboxState) {
+      return [
+        {
+          from: sandboxState.fromSquare,
+          to: sandboxState.toSquare,
+          color: '#81b64c',
+          variant: 'best',
+        },
+      ];
+    }
+
+    if (!currentPly) return [];
+
+    // 1. No arrows on Opening Book moves or quiet initial transitions out of book
+    const isQuietOutOfBookTransition =
+      Boolean(currentPly.outOfBook) &&
+      (currentPly.classification === 'good' || currentPly.classification === 'excellent') &&
+      (currentPly.winProbLoss ?? 0) < 3.5;
+
+    if (currentPly.classification === 'book' || isQuietOutOfBookTransition) {
+      return [];
+    }
+
+    // 2. If user toggles/hovers Next-Turn Best-Move preview, show ONLY that 1 single arrow
+    if (
+      (showFollowUpArrow || hoverFollowUpArrow) &&
+      currentPly.followUpFrom &&
+      currentPly.followUpTo
+    ) {
+      return [
+        {
+          from: currentPly.followUpFrom,
+          to: currentPly.followUpTo,
+          color: '#81b64c',
+          variant: 'best',
+        },
+      ];
+    }
+
+    // 3. Otherwise show ONLY the 1 single Engine Best Move arrow for the current position
+    const bestFrom = currentPly.bestMoveFrom || currentPly.fromSquare;
+    const bestTo = currentPly.bestMoveTo || currentPly.toSquare;
+
+    if (!bestFrom || !bestTo) return [];
+
+    return [
+      {
+        from: bestFrom,
+        to: bestTo,
+        color: '#81b64c',
+        variant: 'best',
+      },
+    ];
+  }, [currentPly, sandboxState, showFollowUpArrow, hoverFollowUpArrow]);
+
   const topPlayer = isFlipped ? matchAnalysis.whitePlayer : matchAnalysis.blackPlayer;
   const bottomPlayer = isFlipped ? matchAnalysis.blackPlayer : matchAnalysis.whitePlayer;
   const topPlayerAccuracy = isFlipped
@@ -585,8 +749,24 @@ export function MoveByMoveAnalyzer({
   const bottomPlayerColorLabel = isFlipped ? '♚ Black' : '♔ White';
 
   return (
-    <div className="w-full space-y-7">
-      {/* Search Header Bar: Real Chess.com Search + Free Credit System */}
+    <div className="w-full space-y-7 relative">
+      {/* Floating Keyboard Shortcut / Clipboard Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={{ duration: 0.16 }}
+            className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 text-white border border-emerald-500/40 shadow-2xl flex items-center gap-2.5 text-xs font-bold pointer-events-none"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#81b64c] animate-pulse" />
+            <span>{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Search Header Bar: Real Chess.com Search */}
       <div className="p-4 sm:p-5 bg-slate-50/90 rounded-2xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-4">
         {/* Username Search Box */}
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 max-w-lg">
@@ -621,34 +801,18 @@ export function MoveByMoveAnalyzer({
           )}
         </form>
 
-        {/* Free Credit System & Paywall Trigger Badge */}
-        <div className="flex items-center gap-3">
-          {isProSubscriber ? (
-            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>∞ Unlimited Pro Active</span>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                if (credits === 0) setIsPaywallOpen(true);
-                else handleTriggerDeepScan();
-              }}
-              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer border ${
-                credits > 1
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
-                  : credits === 1
-                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                  : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 animate-pulse'
-              }`}
-              title="Trigger Deep Engine Scan"
-            >
-              <Zap className={`w-3.5 h-3.5 ${credits > 0 ? 'text-amber-500 fill-amber-500' : 'text-rose-600'}`} />
-              <span>
-                {credits > 0 ? `⚡ ${credits} / 3 Free Scans Available` : '⚡ 0 / 3 Free Scans Remaining'}
-              </span>
-            </button>
-          )}
+        {/* Arrow Legend, Keyboard Shortcuts & Recent Matches List Toggle */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="hidden sm:inline-flex items-center gap-3 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 text-[11px] font-semibold text-slate-600 shadow-2xs">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#81b64c]" />
+              <span>Single Best-Move Arrow</span>
+            </span>
+            <span className="text-slate-300">•</span>
+            <span className="font-mono text-[10px] text-slate-500">
+              ←/→ Step · ↑/↓ Vol · ⌘C Copy Log
+            </span>
+          </div>
 
           {/* Toggle Recent Matches List */}
           <button
@@ -856,6 +1020,7 @@ export function MoveByMoveAnalyzer({
                 fromSquare={sandboxState?.fromSquare || currentPly?.fromSquare}
                 toSquare={sandboxState?.toSquare || currentPly?.toSquare}
                 classification={sandboxState ? sandboxState.classification : currentPly?.classification}
+                arrows={boardArrows}
                 isFlipped={isFlipped}
                 interactive={true}
                 allowedTurnColor={null}
@@ -940,7 +1105,7 @@ export function MoveByMoveAnalyzer({
                 onClick={() => handleSelectPly(Math.max(0, activePlyIndex - 1))}
                 disabled={activePlyIndex === 0 && !sandboxState}
                 className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="Previous Move (◀ or Left Arrow)"
+                title="Previous Move (◀ or Left Arrow Key)"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -965,7 +1130,7 @@ export function MoveByMoveAnalyzer({
                 onClick={() => handleSelectPly(Math.min(matchAnalysis.plies.length - 1, activePlyIndex + 1))}
                 disabled={activePlyIndex === matchAnalysis.plies.length - 1 && !sandboxState}
                 className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="Next Move (▶ or Right Arrow)"
+                title="Next Move (▶ or Right Arrow Key)"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -979,8 +1144,8 @@ export function MoveByMoveAnalyzer({
               </button>
             </div>
 
-            {/* Speed Selector & Audio / Flip Toggles */}
-            <div className="flex items-center gap-2">
+            {/* Speed Selector, Mini Volume Control & Flip Board Button */}
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center bg-white rounded-lg border border-slate-200 p-0.5 text-[11px] font-bold">
                 {[0.5, 1, 1.5, 2].map((spd) => (
                   <button
@@ -997,22 +1162,50 @@ export function MoveByMoveAnalyzer({
                 ))}
               </div>
 
-              {/* Sound Toggle */}
-              <button
-                onClick={() => {
-                  const nextMuted = !isMuted;
-                  setIsMuted(nextMuted);
-                  chessAudio.setMuted(nextMuted);
-                }}
-                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                  isMuted
-                    ? 'bg-slate-100 text-slate-400 border-slate-200'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-                title={isMuted ? 'Enable Audio' : 'Mute Audio'}
+              {/* Sound Volume Control Pill (Mute Toggle + 0–100% Slider + ↑/↓/+/- Shortcut Support) */}
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-slate-200 shadow-2xs"
+                title="Move Sound Volume (Use ↑/↓ or +/- keys to adjust by ±10%)"
               >
-                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMuted = !isMuted;
+                    setIsMuted(nextMuted);
+                    chessAudio.setMuted(nextMuted);
+                    if (!nextMuted && volumePct === 0) {
+                      applyVolumePct(80, true);
+                    } else {
+                      triggerToast(nextMuted ? 'Move Audio Muted' : `Move Sound Volume: ${volumePct}%`);
+                    }
+                  }}
+                  className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                    isMuted || volumePct === 0
+                      ? 'text-slate-400 hover:text-slate-600'
+                      : 'text-emerald-700 hover:text-emerald-800'
+                  }`}
+                  title={isMuted || volumePct === 0 ? 'Unmute Move Audio' : 'Mute Move Audio'}
+                >
+                  {isMuted || volumePct === 0 ? (
+                    <VolumeX className="w-3.5 h-3.5" />
+                  ) : (
+                    <Volume2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={isMuted ? 0 : volumePct}
+                  onChange={(e) => applyVolumePct(Number(e.target.value), false)}
+                  className="w-16 h-1.5 accent-emerald-600 bg-slate-200 rounded-lg cursor-pointer"
+                  aria-label="Move Sound Volume"
+                />
+                <span className="font-mono text-[10px] font-bold text-slate-600 tabular-nums w-7 text-right">
+                  {isMuted ? '0%' : `${volumePct}%`}
+                </span>
+              </div>
 
               {/* Dedicated Flip Board Button */}
               <button
@@ -1041,8 +1234,8 @@ export function MoveByMoveAnalyzer({
               initial={{ opacity: 0, y: 6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.2 }}
-              className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3"
+              transition={{ duration: 0.16 }}
+              className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3 select-text"
             >
               {/* Card Header with Official Badge */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1078,7 +1271,7 @@ export function MoveByMoveAnalyzer({
               </div>
 
               {/* Crystal-clear Human Language Explanation */}
-              <p className="text-xs text-slate-600 leading-relaxed font-normal">
+              <p className="text-xs text-slate-600 leading-relaxed font-normal select-text">
                 {sandboxState ? sandboxState.explanation : currentPly?.explanation}
               </p>
 
@@ -1089,7 +1282,7 @@ export function MoveByMoveAnalyzer({
                   currentPly?.pvLine ||
                   (currentPly?.multiPv && currentPly.multiPv.length > 0) ||
                   currentPly?.tacticalThreat) && (
-                  <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs">
+                  <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs select-text">
                     {currentPly.evalDelta && (
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500 font-medium">Evaluation Swing:</span>
@@ -1122,11 +1315,30 @@ export function MoveByMoveAnalyzer({
                     )}
 
                     {currentPly.pvLine && (
-                      <div className="text-slate-800 flex flex-col gap-1 pt-0.5">
-                        <span className="text-[11px] font-semibold text-slate-500">
-                          Best Continuation (PV1):
-                        </span>
-                        <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90">
+                      <div
+                        className="text-slate-800 flex flex-col gap-1.5 pt-0.5"
+                        onMouseEnter={() => setHoverFollowUpArrow(true)}
+                        onMouseLeave={() => setHoverFollowUpArrow(false)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">
+                            Best Continuation (PV1):
+                          </span>
+                          {currentPly.followUpFrom && currentPly.followUpTo && (
+                            <button
+                              type="button"
+                              onClick={() => setShowFollowUpArrow((prev) => !prev)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer ${
+                                showFollowUpArrow
+                                  ? 'bg-[#81b64c] text-white border-[#6ea03c]'
+                                  : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                              }`}
+                            >
+                              {showFollowUpArrow ? 'Showing Next Best Move' : 'Preview Next Best Move'}
+                            </button>
+                          )}
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90 select-text">
                           {currentPly.pvLine}
                         </span>
                       </div>
@@ -1140,7 +1352,7 @@ export function MoveByMoveAnalyzer({
                         {currentPly.multiPv.slice(0, 3).map((cand) => (
                           <div
                             key={cand.multipv}
-                            className="flex items-center justify-between gap-2 text-[11px] font-mono bg-white px-2 py-1 rounded border border-slate-200/70"
+                            className="flex items-center justify-between gap-2 text-[11px] font-mono bg-white px-2 py-1 rounded border border-slate-200/70 select-text"
                           >
                             <span className="truncate text-slate-700">
                               <strong className="text-emerald-700">PV{cand.multipv}:</strong>{' '}
@@ -1160,7 +1372,7 @@ export function MoveByMoveAnalyzer({
                     )}
 
                     {currentPly.tacticalThreat && (
-                      <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight">
+                      <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight select-text">
                         • {currentPly.tacticalThreat}
                       </div>
                     )}
@@ -1169,21 +1381,46 @@ export function MoveByMoveAnalyzer({
             </motion.div>
           </AnimatePresence>
 
-          {/* The AI Coach Move Feed */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+          {/* The AI Coach Move Feed with Dedicated Copy Game Log Button */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden select-text">
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
               <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Move History & Classification Feed</span>
+                <span>Move History &amp; Log</span>
               </span>
-              <span className="text-slate-400 text-[11px] tabular-nums">
-                {matchAnalysis.plies.length} plies
-              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={copyFormattedGameLog}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                    copiedLogSuccess
+                      ? 'bg-emerald-600 text-white border-emerald-700'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                  title="Copy Full PGN + Move-by-Move Evaluation Log (⌘C / Ctrl+C)"
+                >
+                  {copiedLogSuccess ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3 text-emerald-600" />
+                      <span>Copy Game Log (⌘C)</span>
+                    </>
+                  )}
+                </button>
+                <span className="text-slate-400 text-[11px] tabular-nums hidden sm:inline">
+                  {matchAnalysis.plies.length} plies
+                </span>
+              </div>
             </div>
 
             <div
               ref={moveFeedContainerRef}
-              className="max-h-72 overflow-y-auto divide-y divide-slate-100 p-1.5 scroll-smooth"
+              className="max-h-72 overflow-y-auto divide-y divide-slate-100 p-1.5 scroll-smooth select-text"
             >
               {matchAnalysis.plies.map((ply, idx) => {
                 const isActive = activePlyIndex === idx && !sandboxState;
@@ -1543,18 +1780,6 @@ export function MoveByMoveAnalyzer({
           </div>
         </div>
       </div>
-
-      {/* The 100x High-Converting Paywall Modal */}
-      <PaywallModal
-        isOpen={isPaywallOpen}
-        onClose={() => setIsPaywallOpen(false)}
-        onUpgradeSuccess={() => {
-          setIsProSubscriber(true);
-        }}
-        onResetCredits={() => {
-          setCredits(3);
-        }}
-      />
     </div>
   );
 }

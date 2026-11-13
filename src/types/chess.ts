@@ -98,6 +98,15 @@ export interface MultiPvCandidate {
   pvLine: string;
 }
 
+export interface BoardArrow {
+  from: string;
+  to: string;
+  color: string;
+  variant: 'best' | 'played' | 'followup';
+  dashed?: boolean;
+  label?: string;
+}
+
 export interface AnalyzedPly {
   plyIndex: number;
   moveNumber: number;
@@ -116,6 +125,12 @@ export interface AnalyzedPly {
   classification: MoveClassification;
   explanation: string;
   bestAlternative?: string;
+  bestMoveUci?: string;    // e.g. "e2e4"
+  bestMoveFrom?: string;   // e.g. "e2"
+  bestMoveTo?: string;     // e.g. "e4"
+  followUpFrom?: string;   // e.g. "g8"
+  followUpTo?: string;     // e.g. "f6"
+  followUpSan?: string;    // e.g. "Nf6"
   pvLine?: string;
   multiPv?: MultiPvCandidate[];
   cpLoss?: number;

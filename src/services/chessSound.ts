@@ -4,6 +4,27 @@
 class ChessAudioEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
+  private volume: number = 0.8;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedVol = localStorage.getItem('chesspulse_volume');
+        if (savedVol !== null) {
+          const parsed = parseFloat(savedVol);
+          if (Number.isFinite(parsed)) {
+            this.volume = Math.max(0, Math.min(1, parsed));
+          }
+        }
+        const savedMuted = localStorage.getItem('chesspulse_muted');
+        if (savedMuted === 'true') {
+          this.isMuted = true;
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }
 
   private getContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
@@ -21,12 +42,46 @@ class ChessAudioEngine {
     return this.ctx;
   }
 
+  private getOutputNode(ctx: AudioContext): AudioNode {
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, ctx.currentTime);
+    masterGain.connect(ctx.destination);
+    return masterGain;
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    try {
+      localStorage.setItem('chesspulse_muted', String(muted));
+    } catch {
+      // Ignore storage errors
+    }
   }
 
   public getMuted(): boolean {
-    return this.isMuted;
+    return this.isMuted || this.volume <= 0;
+  }
+
+  public setVolume(vol: number) {
+    const clamped = Math.max(0, Math.min(1, Math.round(vol * 100) / 100));
+    this.volume = clamped;
+    if (clamped > 0 && this.isMuted) {
+      this.isMuted = false;
+      try {
+        localStorage.setItem('chesspulse_muted', 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    try {
+      localStorage.setItem('chesspulse_volume', String(clamped));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  public getVolume(): number {
+    return this.volume;
   }
 
   /**
@@ -34,12 +89,13 @@ class ChessAudioEngine {
    * Simulates the physical snap of a weighted wooden piece landing on a tournament board.
    */
   public playMove() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
 
       // 1. High-frequency click / snap transient (tactile attack)
       const clickOsc = ctx.createOscillator();
@@ -52,7 +108,7 @@ class ChessAudioEngine {
       clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.012);
 
       clickOsc.connect(clickGain);
-      clickGain.connect(ctx.destination);
+      clickGain.connect(out);
       clickOsc.start(now);
       clickOsc.stop(now + 0.013);
 
@@ -67,7 +123,7 @@ class ChessAudioEngine {
       bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
 
       bodyOsc.connect(bodyGain);
-      bodyGain.connect(ctx.destination);
+      bodyGain.connect(out);
       bodyOsc.start(now);
       bodyOsc.stop(now + 0.042);
 
@@ -82,7 +138,7 @@ class ChessAudioEngine {
       feltGain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
 
       feltOsc.connect(feltGain);
-      feltGain.connect(ctx.destination);
+      feltGain.connect(out);
       feltOsc.start(now);
       feltOsc.stop(now + 0.036);
     } catch {
@@ -91,16 +147,28 @@ class ChessAudioEngine {
   }
 
   /**
+   * Double wooden slide-and-place sound for castling (O-O / O-O-O).
+   */
+  public playCastle() {
+    if (this.isMuted || this.volume <= 0) return;
+    this.playMove();
+    setTimeout(() => {
+      this.playMove();
+    }, 55);
+  }
+
+  /**
    * Soft, crystalline 'ping' for brilliant move annotations (!!).
    * Combines a crisp tactile piece placement with an ethereal, harmonic bell chime.
    */
   public playBrilliant() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
 
       // First trigger the tactile piece placement click
       this.playMove();
@@ -127,7 +195,7 @@ class ChessAudioEngine {
         gainNode.gain.exponentialRampToValueAtTime(0.0001, start + decay);
 
         osc.connect(gainNode);
-        gainNode.connect(ctx.destination);
+        gainNode.connect(out);
 
         osc.start(start);
         osc.stop(start + decay + 0.02);
@@ -141,7 +209,7 @@ class ChessAudioEngine {
    * Crisp, subtle micro-ping for Best Move annotations (★).
    */
   public playBest() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
@@ -149,6 +217,7 @@ class ChessAudioEngine {
       this.playMove();
 
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
       const osc = ctx.createOscillator();
       const gainNode = ctx.createGain();
       const start = now + 0.005;
@@ -162,7 +231,7 @@ class ChessAudioEngine {
       gainNode.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
 
       osc.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      gainNode.connect(out);
 
       osc.start(start);
       osc.stop(start + 0.13);
@@ -175,12 +244,13 @@ class ChessAudioEngine {
    * Snappy dual-click tactile impact for captures.
    */
   public playCapture() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
 
       // 1. Initial capture collision snap (piece struck)
       const strikeOsc = ctx.createOscillator();
@@ -193,7 +263,7 @@ class ChessAudioEngine {
       strikeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
 
       strikeOsc.connect(strikeGain);
-      strikeGain.connect(ctx.destination);
+      strikeGain.connect(out);
       strikeOsc.start(now);
       strikeOsc.stop(now + 0.022);
 
@@ -209,7 +279,7 @@ class ChessAudioEngine {
       landGain.gain.exponentialRampToValueAtTime(0.001, landTime + 0.038);
 
       landOsc.connect(landGain);
-      landGain.connect(ctx.destination);
+      landGain.connect(out);
       landOsc.start(landTime);
       landOsc.stop(landTime + 0.04);
     } catch {
@@ -222,12 +292,13 @@ class ChessAudioEngine {
    * Informative, dignified, non-abrasive.
    */
   public playBlunder() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -239,7 +310,7 @@ class ChessAudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
 
       osc.start(now);
       osc.stop(now + 0.125);
@@ -252,12 +323,13 @@ class ChessAudioEngine {
    * Subtle muted wood tap for mistakes (?).
    */
   public playMistake() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -269,7 +341,7 @@ class ChessAudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
 
       osc.start(now);
       osc.stop(now + 0.085);
@@ -282,12 +354,13 @@ class ChessAudioEngine {
    * Ultra-subtle tactile tap when selecting or picking up a piece.
    */
   public playSelect() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -299,7 +372,7 @@ class ChessAudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.008);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
 
       osc.start(now);
       osc.stop(now + 0.009);
@@ -312,13 +385,14 @@ class ChessAudioEngine {
    * Crisp tournament check alert chime (+)
    */
   public playCheck() {
-    if (this.isMuted) return;
+    if (this.isMuted || this.volume <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       this.playMove();
       const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       const start = now + 0.006;
@@ -332,7 +406,7 @@ class ChessAudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
 
       osc.start(start);
       osc.stop(start + 0.17);

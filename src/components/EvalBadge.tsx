@@ -37,9 +37,9 @@ export const CLASSIFICATION_META: Record<MoveClassification, ClassificationStyle
   best: {
     symbol: '★',
     label: 'Best Move',
-    hexBg: '#96bc4b',
+    hexBg: '#81b64c',
     textColorOnCircle: '#ffffff',
-    pillClasses: 'bg-[#96bc4b]/15 text-[#3f6212] dark:text-[#a3e635] border-[#96bc4b]/45',
+    pillClasses: 'bg-[#81b64c]/15 text-[#3f6212] dark:text-[#a3e635] border-[#81b64c]/45',
     title: 'Best Move (★): Exact top engine recommendation (PV1) with <= 1.5% Win Probability loss',
   },
   excellent: {
@@ -53,9 +53,9 @@ export const CLASSIFICATION_META: Record<MoveClassification, ClassificationStyle
   good: {
     symbol: '✓',
     label: 'Good',
-    hexBg: '#97af8b',
+    hexBg: '#96bc4b',
     textColorOnCircle: '#ffffff',
-    pillClasses: 'bg-[#97af8b]/18 text-[#3f5238] dark:text-[#cbd5e1] border-[#97af8b]/45',
+    pillClasses: 'bg-[#96bc4b]/15 text-[#3f5238] dark:text-[#cbd5e1] border-[#96bc4b]/40',
     title: 'Good (✓): Solid playable move with moderate Win Probability loss (4.2% – 8.0%)',
   },
   book: {
@@ -77,25 +77,25 @@ export const CLASSIFICATION_META: Record<MoveClassification, ClassificationStyle
   mistake: {
     symbol: '?',
     label: 'Mistake',
-    hexBg: '#e6912c',
+    hexBg: '#ffa459',
     textColorOnCircle: '#ffffff',
-    pillClasses: 'bg-[#e6912c]/15 text-[#9a3412] dark:text-[#fdba74] border-[#e6912c]/50',
+    pillClasses: 'bg-[#ffa459]/18 text-[#9a3412] dark:text-[#fdba74] border-[#ffa459]/55',
     title: 'Mistake (?): Clear error losing 14.0% – 24.0% Win Probability',
   },
   miss: {
     symbol: '✖',
     label: 'Miss',
-    hexBg: '#e06c55',
+    hexBg: '#fa412d',
     textColorOnCircle: '#ffffff',
-    pillClasses: 'bg-[#e06c55]/15 text-[#991b1b] dark:text-[#fca5a5] border-[#e06c55]/50',
+    pillClasses: 'bg-[#fa412d]/15 text-[#991b1b] dark:text-[#fca5a5] border-[#fa412d]/50',
     title: 'Miss (✖): Missed a direct tactical punishment after an opponent error',
   },
   blunder: {
     symbol: '??',
     label: 'Blunder',
-    hexBg: '#ca3431',
+    hexBg: '#fa412d',
     textColorOnCircle: '#ffffff',
-    pillClasses: 'bg-[#ca3431]/15 text-[#991b1b] dark:text-[#f87171] border-[#ca3431]/55',
+    pillClasses: 'bg-[#fa412d]/15 text-[#991b1b] dark:text-[#f87171] border-[#fa412d]/55',
     title: 'Blunder (??): Severe blunder losing > 24.0% Win Probability or allowing forced mate',
   },
 };
