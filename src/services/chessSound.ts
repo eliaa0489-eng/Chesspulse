@@ -414,7 +414,51 @@ class ChessAudioEngine {
       // Graceful fallback
     }
   }
+
+  /**
+   * Decisive tournament checkmate chime (#) — resonant harmonic triad with authoritative wooden finality.
+   */
+  public playCheckmate() {
+    if (this.isMuted || this.volume <= 0) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    try {
+      this.playMove();
+      const now = ctx.currentTime;
+      const out = this.getOutputNode(ctx);
+
+      const notes = [
+        { freq: 523.25, delay: 0.01, duration: 0.28, gain: 0.11 }, // C5
+        { freq: 659.25, delay: 0.07, duration: 0.32, gain: 0.11 }, // E5
+        { freq: 783.99, delay: 0.13, duration: 0.42, gain: 0.13 }, // G5
+        { freq: 1046.5, delay: 0.19, duration: 0.55, gain: 0.14 }, // C6
+      ];
+
+      notes.forEach(({ freq, delay, duration, gain: peakGain }) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const start = now + delay;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, start);
+
+        gainNode.gain.setValueAtTime(0.0001, start);
+        gainNode.gain.linearRampToValueAtTime(peakGain, start + 0.012);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+        osc.connect(gainNode);
+        gainNode.connect(out);
+
+        osc.start(start);
+        osc.stop(start + duration + 0.02);
+      });
+    } catch {
+      // Graceful fallback
+    }
+  }
 }
 
 export const chessAudio = new ChessAudioEngine();
+
 

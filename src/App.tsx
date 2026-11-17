@@ -361,19 +361,19 @@ export default function App() {
               </ErrorBoundary>
 
               {/* 4. Real Match Archive & Move-By-Move Engine Analyzer (Zero Hallucination) */}
-              <section id="analyzer" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-                <div className="mb-6">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-xs font-bold text-emerald-800 mb-2">
+              <section id="analyzer" className="py-5 sm:py-16 px-2.5 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+                <div className="mb-3 sm:mb-6">
+                  <div className="inline-flex items-center gap-2 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-[10px] sm:text-xs font-bold text-emerald-800 mb-1.5 sm:mb-2">
                     <span>
                       {analyzedUser || loggedInUser
                         ? `Live Chess.com Archives Sync • @${analyzedUser || loggedInUser}`
                         : 'Showcase Demo Mode • Enter Username to Load Your Real Games'}
                     </span>
                   </div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
+                  <h2 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
                     Grandmaster Match &amp; Move Analyzer
                   </h2>
-                  <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
+                  <p className="hidden sm:block text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
                     Inspect actual games played on Chess.com. Move classifications are strictly calculated from the ChessPulse Tactical Heuristic Engine.
                   </p>
                 </div>

@@ -126,23 +126,23 @@ export function Navbar({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full pt-3 pb-2 px-4 sm:px-6 transition-all pointer-events-none">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 pointer-events-auto">
+    <header className="sticky top-0 z-40 w-full py-1.5 px-3 sm:pt-3 sm:pb-2 sm:px-6 transition-all pointer-events-none">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 pointer-events-auto">
         {/* 1. Left: Minimalist Staunton King Brand Logo */}
         <button
           type="button"
           onClick={handleOverviewClick}
-          className="flex items-center gap-2.5 text-slate-900 group shrink-0 cursor-pointer text-left bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full border border-[#E2E8F0] shadow-xs hover:border-slate-300 transition-all"
+          className="flex items-center gap-2 sm:gap-2.5 text-slate-900 group shrink-0 cursor-pointer text-left bg-white/95 backdrop-blur-md px-2.5 py-1 sm:px-3.5 sm:py-2 rounded-full border border-[#E2E8F0] shadow-xs hover:border-slate-300 transition-all"
           title="Back to top"
         >
-          <div className="relative w-7 h-7 rounded-full bg-slate-950 flex items-center justify-center text-white shadow-2xs transition-transform duration-200 group-hover:scale-105">
-            <StauntonKingMark className="w-4 h-4 text-white" />
+          <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-slate-950 flex items-center justify-center text-white shadow-2xs transition-transform duration-200 group-hover:scale-105">
+            <StauntonKingMark className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
             <span
-              className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#059669] border-2 border-white"
+              className="absolute -top-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-[#059669] border-2 border-white"
               aria-hidden="true"
             />
           </div>
-          <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 flex items-center">
+          <span className="text-xs sm:text-base font-extrabold tracking-tight text-slate-900 flex items-center">
             ChessPulse
             <span
               className="inline-block w-1.5 h-1.5 rounded-full bg-[#059669] ml-1"
@@ -225,15 +225,24 @@ export function Navbar({
           </button>
         </nav>
 
-        {/* 3. Right: Focused Solely on the Clickable Profile Avatar */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* 3. Right: Focused Solely on the Clickable Profile Avatar + Quick Analyzer Jump on Mobile */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => scrollTo('analyzer-board-view')}
+            className="lg:hidden px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-extrabold text-emerald-800 flex items-center gap-1 shadow-2xs active:scale-95 transition-transform cursor-pointer"
+            title="Jump to Chessboard Review"
+          >
+            <span>♟ Board</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenProfileStats}
-            className="group flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#E2E8F0] hover:border-slate-300 shadow-xs hover:shadow-sm transition-all cursor-pointer"
+            className="group flex items-center gap-2 p-1 sm:pl-1.5 sm:pr-3.5 sm:py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#E2E8F0] hover:border-slate-300 shadow-xs hover:shadow-sm transition-all cursor-pointer"
             title={`View @${effectiveHandle}'s Live Chess.com Statistics`}
           >
-            <div className="relative w-7 h-7 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center border border-slate-200 shrink-0">
+            <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center border border-slate-200 shrink-0">
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
@@ -272,7 +281,7 @@ export function Navbar({
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden w-9 h-9 rounded-full bg-white border border-[#E2E8F0] text-slate-700 flex items-center justify-center cursor-pointer shadow-2xs"
+            className="lg:hidden w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-[#E2E8F0] text-slate-700 flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 transition-transform"
           >
             {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>

@@ -626,12 +626,40 @@ export function ChesscomBoard({
   // STRICT SINGLE-ARROW RULE: Never render more than ONE arrow on the board at any time
   const singleArrow = arrows.length > 0 ? arrows.slice(0, 1) : [];
 
+  // Detect Check (+) and Checkmate (#) and locate the attacked King's exact square (a1–h8)
+  const checkStatus = React.useMemo(() => {
+    try {
+      const chess = new Chess(fen);
+      const isMate = chess.isCheckmate();
+      const isChk = !isMate && chess.inCheck();
+      if (!isMate && !isChk) {
+        return { inCheck: false, isCheckmate: false, kingSquare: null as string | null };
+      }
+      const attackedColor = chess.turn(); // 'w' | 'b'
+      const b = chess.board();
+      let kingSq: string | null = null;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = b[r][c];
+          if (p && p.type === 'k' && p.color === attackedColor) {
+            kingSq = p.square;
+            break;
+          }
+        }
+        if (kingSq) break;
+      }
+      return { inCheck: isChk, isCheckmate: isMate, kingSquare: kingSq };
+    } catch {
+      return { inCheck: false, isCheckmate: false, kingSquare: null as string | null };
+    }
+  }, [fen]);
+
   return (
     <div
-      className={`w-full min-w-[270px] sm:min-w-[480px] lg:min-w-[540px] max-w-[720px] aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-[#262421] bg-[#262421] p-1.5 select-none relative transition-all duration-300 ${
+      className={`w-full max-w-[min(100%,calc(100dvh-255px))] sm:max-w-[720px] sm:min-w-[480px] lg:min-w-[540px] aspect-square mx-auto rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl border-[2.5px] sm:border-4 border-[#262421] bg-[#262421] p-0.5 sm:p-1.5 select-none relative ${
         className || ''
       }`}
-      style={{ backgroundColor: '#262421', borderColor: '#262421', opacity: 1 }}
+      style={{ backgroundColor: '#262421', borderColor: '#262421', opacity: 1, touchAction: 'manipulation' }}
     >
       <div className="grid grid-cols-8 grid-rows-8 w-full h-full rounded-xl overflow-hidden relative">
         {Array.from({ length: 8 }).map((_, r) =>
@@ -648,11 +676,20 @@ export function ChesscomBoard({
             const isSelected = selectedSquare === squareName;
             const isBeingDragged = draggingSquare === squareName;
 
+            const isCheckedKingSquare =
+              checkStatus.inCheck && checkStatus.kingSquare === squareName;
+            const isCheckmatedKingSquare =
+              checkStatus.isCheckmate && checkStatus.kingSquare === squareName;
+
             const legalMove = legalMoves.find((m) => m.to === squareName);
 
             // Official Tournament Green & Warm Ivory Palette (#739552 dark, #ebecd0 light)
             const squareBgHex = isDark ? '#739552' : '#ebecd0';
-            const coordColorHex = isDark ? '#ebecd0' : '#739552';
+            const coordColorHex = isCheckmatedKingSquare
+              ? '#ffffff'
+              : isDark
+              ? '#ebecd0'
+              : '#739552';
 
             return (
               <div
@@ -664,7 +701,7 @@ export function ChesscomBoard({
                 style={{ backgroundColor: squareBgHex, opacity: 1 }}
               >
                 {/* Authentic Chess.com Square Highlight Tinting on fromSquare & toSquare */}
-                {isLastMoveSquare && !isSelected && (
+                {isLastMoveSquare && !isSelected && !isCheckmatedKingSquare && (
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
@@ -674,18 +711,42 @@ export function ChesscomBoard({
                   />
                 )}
 
+                {/* CHECK (+) Red Radial Danger Glow Highlight on Attacked King's Square */}
+                {isCheckedKingSquare && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background:
+                        'radial-gradient(circle, rgba(255, 59, 48, 0.88) 0%, rgba(220, 38, 38, 0.62) 58%, rgba(185, 28, 28, 0.14) 100%)',
+                      boxShadow: 'inset 0 0 12px rgba(220, 38, 38, 0.78)',
+                      zIndex: 2,
+                    }}
+                  />
+                )}
+
+                {/* CHECKMATE (#) Full Solid Crimson Red Square (#dc2626 / #b91c1c) with Pulsing Border */}
+                {isCheckmatedKingSquare && (
+                  <div
+                    className="absolute inset-0 pointer-events-none chess-mate-square-pulse"
+                    style={{
+                      background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                      zIndex: 2,
+                    }}
+                  />
+                )}
+
                 {/* Selected Square Highlight */}
                 {isSelected && (
                   <div
                     className="absolute inset-0 pointer-events-none ring-2 ring-inset ring-black/25"
-                    style={{ backgroundColor: 'rgba(186, 202, 43, 0.72)', zIndex: 1 }}
+                    style={{ backgroundColor: 'rgba(186, 202, 43, 0.72)', zIndex: 3 }}
                   />
                 )}
 
                 {/* Crisp Tournament Perimeter Coordinates (1–8 on left file, a–h on bottom rank) */}
                 {c === 0 && (
                   <span
-                    className="absolute top-0.5 left-1.5 text-[10px] sm:text-[11px] font-extrabold leading-none select-none pointer-events-none"
+                    className="absolute top-0.5 left-1 sm:left-1.5 text-[9px] sm:text-[11px] font-extrabold leading-none select-none pointer-events-none"
                     style={{ color: coordColorHex, zIndex: 5, opacity: 1 }}
                   >
                     {8 - actualR}
@@ -694,7 +755,7 @@ export function ChesscomBoard({
 
                 {r === 7 && (
                   <span
-                    className="absolute bottom-0.5 right-1.5 text-[10px] sm:text-[11px] font-extrabold leading-none select-none pointer-events-none"
+                    className="absolute bottom-0.5 right-1 sm:right-1.5 text-[9px] sm:text-[11px] font-extrabold leading-none select-none pointer-events-none"
                     style={{ color: coordColorHex, zIndex: 5, opacity: 1 }}
                   >
                     {String.fromCharCode('a'.charCodeAt(0) + actualC)}
@@ -704,14 +765,14 @@ export function ChesscomBoard({
                 {/* Legal Move Indicators: Target Dot on empty, Capture Ring on occupied */}
                 {legalMove && !cell && (
                   <div
-                    className="w-4 h-4 rounded-full pointer-events-none transition-transform scale-100"
+                    className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full pointer-events-none transition-transform scale-100"
                     style={{ backgroundColor: 'rgba(0, 0, 0, 0.24)', zIndex: 15 }}
                   />
                 )}
 
                 {legalMove && cell && (
                   <div
-                    className="absolute inset-1 rounded-full border-[4px] pointer-events-none"
+                    className="absolute inset-1 rounded-full border-[3.5px] sm:border-[4px] pointer-events-none"
                     style={{ borderColor: 'rgba(0, 0, 0, 0.28)', zIndex: 20 }}
                   />
                 )}
@@ -726,17 +787,43 @@ export function ChesscomBoard({
                   </div>
                 )}
 
-                {/* High-Resolution Staunton Piece SVG Container */}
+                {/* Official Checkmate (#) Badge at Top-Right Corner of the Checkmated King's Square */}
+                {isCheckmatedKingSquare && (
+                  <div
+                    className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 pointer-events-none drop-shadow-md"
+                    style={{ zIndex: 32, opacity: 1 }}
+                    title="Checkmate (#)"
+                  >
+                    <span
+                      style={{ backgroundColor: '#991b1b', color: '#ffffff' }}
+                      className="inline-flex items-center justify-center rounded-full font-black select-none ring-2 ring-white/95 shadow-md w-5 h-5 sm:w-6 sm:h-6 text-[10px] sm:text-[11px]"
+                    >
+                      #
+                    </span>
+                  </div>
+                )}
+
+                {/* High-Resolution Staunton Piece SVG Container (with Check Shake & Checkmate Defeated Tilt) */}
                 {cell &&
                   (() => {
                     const isMovable = canInteractWithCell(cell);
+                    const kingAnimClass = isCheckmatedKingSquare
+                      ? 'chess-king-checkmated'
+                      : isCheckedKingSquare
+                      ? 'chess-king-check-shake'
+                      : '';
                     return (
                       <div
+                        key={
+                          isCheckedKingSquare || isCheckmatedKingSquare
+                            ? `${squareName}-${fen}`
+                            : squareName
+                        }
                         draggable={isMovable}
                         onDragStart={(e) => handleDragStart(e, squareName, cell)}
                         onDragEnd={handleDragEnd}
                         style={{ opacity: 1, zIndex: 10 }}
-                        className={`relative w-full h-full flex items-center justify-center transition-transform duration-150 ${
+                        className={`relative w-full h-full flex items-center justify-center transition-transform duration-150 ${kingAnimClass} ${
                           isMovable
                             ? 'cursor-grab active:cursor-grabbing hover:scale-105'
                             : 'cursor-default select-none'

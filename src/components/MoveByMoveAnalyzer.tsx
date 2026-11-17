@@ -27,6 +27,7 @@ import {
   BookOpen,
   Copy,
   Check,
+  X,
 } from 'lucide-react';
 import { FEATURED_MATCH_ANALYSIS } from '../data/matchAnalysisData';
 import {
@@ -167,7 +168,10 @@ export function MoveByMoveAnalyzer({
   const [matchErrorCode, setMatchErrorCode] = useState<ApiErrorCode | undefined>(undefined);
   const [matchErrorMessage, setMatchErrorMessage] = useState<string | undefined>(undefined);
   const [selectedMatch, setSelectedMatch] = useState<ChessComMatch | null>(null);
-  const [isMatchFeedOpen, setIsMatchFeedOpen] = useState<boolean>(true);
+  // On mobile (< 1024px), collapse the match list drawer by default so the chessboard fits 100dvh immediately
+  const [isMatchFeedOpen, setIsMatchFeedOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  );
 
   // Active match analysis state (initialized with instant pre-computed featured match)
   const [matchAnalysis, setMatchAnalysis] = useState<FullMatchAnalysis>(FEATURED_MATCH_ANALYSIS);
@@ -360,17 +364,32 @@ export function MoveByMoveAnalyzer({
     onUsernameChange?.(clean);
   };
 
-  // Play Web Audio API sound on active move change (move, capture, check, castle, mistake, blunder, best, brilliant)
+  // Play Web Audio API sound on active move change (checkmate, check, castle, capture, brilliant, blunder, mistake, best, move)
   const playMoveAudio = (ply: AnalyzedPly) => {
     if (isMuted || volumePct <= 0) return;
-    if (ply.classification === 'brilliant' || ply.classification === 'great') {
+
+    let isMate = ply.notation.includes('#');
+    let isChk = !isMate && ply.notation.includes('+');
+    if (!isMate && !isChk && ply.fen) {
+      try {
+        const c = new Chess(ply.fen);
+        isMate = c.isCheckmate();
+        isChk = !isMate && c.inCheck();
+      } catch {
+        // Ignore FEN parse fallback
+      }
+    }
+
+    if (isMate) {
+      chessAudio.playCheckmate();
+    } else if (isChk) {
+      chessAudio.playCheck();
+    } else if (ply.classification === 'brilliant' || ply.classification === 'great') {
       chessAudio.playBrilliant();
     } else if (ply.classification === 'blunder') {
       chessAudio.playBlunder();
     } else if (ply.classification === 'mistake' || ply.classification === 'miss') {
       chessAudio.playMistake();
-    } else if (ply.notation.includes('+') || ply.notation.includes('#')) {
-      chessAudio.playCheck();
     } else if (ply.notation.includes('O-O')) {
       chessAudio.playCastle();
     } else if (ply.notation.includes('x')) {
@@ -514,12 +533,14 @@ export function MoveByMoveAnalyzer({
       }
 
       if (!isMuted && volumePct > 0) {
-        if (moveClass === 'blunder') {
+        if (chess.isCheckmate()) {
+          chessAudio.playCheckmate();
+        } else if (chess.inCheck()) {
+          chessAudio.playCheck();
+        } else if (moveClass === 'blunder') {
           chessAudio.playBlunder();
         } else if (moveClass === 'mistake') {
           chessAudio.playMistake();
-        } else if (chess.inCheck()) {
-          chessAudio.playCheck();
         } else if (moveObj.san.includes('O-O')) {
           chessAudio.playCastle();
         } else if (moveObj.captured) {
@@ -638,15 +659,26 @@ export function MoveByMoveAnalyzer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [matchAnalysis, selectedMatch, isMuted, volumePct]);
 
-  // Auto-scroll active move row smoothly into view
+  // Mobile Collapsible Move List / PGN Bottom Drawer state (keeps mobile review on a single 100dvh screen with zero scroll jumps)
+  const [isMobileMoveListOpen, setIsMobileMoveListOpen] = useState<boolean>(false);
+
+  // Strictly scroll ONLY the internal move-feed container's scrollTop when visible (NEVER call element.scrollIntoView or window.scrollTo!)
   useEffect(() => {
-    if (activeMoveRowRef.current && moveFeedContainerRef.current) {
-      activeMoveRowRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
+    const row = activeMoveRowRef.current;
+    const container = moveFeedContainerRef.current;
+    if (row && container && container.offsetParent !== null) {
+      const rowTop = row.offsetTop - container.offsetTop;
+      const rowBottom = rowTop + row.offsetHeight;
+      const viewTop = container.scrollTop;
+      const viewBottom = viewTop + container.clientHeight;
+
+      if (rowTop < viewTop) {
+        container.scrollTop = Math.max(0, rowTop - 8);
+      } else if (rowBottom > viewBottom) {
+        container.scrollTop = rowBottom - container.clientHeight + 8;
+      }
     }
-  }, [activePlyIndex]);
+  }, [activePlyIndex, isMobileMoveListOpen]);
 
   // Convert eval score or official Win% Sigmoid to percentage height for Live Evaluation Bar
   const getEvalBarHeight = (evalScore: string, winProb?: number) => {
@@ -673,6 +705,35 @@ export function MoveByMoveAnalyzer({
     currentPly?.fen ||
     'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const activeTurnSide = (displayedFen.split(' ')[1] || 'w') === 'w' ? 'White' : 'Black';
+
+  // Detect Check (+) and Checkmate (#) for the active board position
+  const positionCheckState = React.useMemo(() => {
+    const activeNotation = sandboxState ? sandboxState.notation : currentPly?.notation || '';
+    try {
+      const chess = new Chess(displayedFen);
+      const isMate = chess.isCheckmate() || activeNotation.includes('#');
+      const isChk = !isMate && (chess.inCheck() || activeNotation.includes('+'));
+      const turnColor = chess.turn(); // side that is checkmated or in check
+      const winnerSide: 'White' | 'Black' | null = isMate
+        ? turnColor === 'w'
+          ? 'Black'
+          : 'White'
+        : null;
+      return {
+        inCheck: isChk,
+        isCheckmate: isMate,
+        winnerSide,
+      };
+    } catch {
+      const isMate = activeNotation.includes('#');
+      const isChk = !isMate && activeNotation.includes('+');
+      return {
+        inCheck: isChk,
+        isCheckmate: isMate,
+        winnerSide: isMate ? (activeTurnSide === 'White' ? 'Black' : 'White') : null,
+      };
+    }
+  }, [displayedFen, sandboxState, currentPly, activeTurnSide]);
 
   /**
    * STRICT SINGLE-ARROW SYSTEM (NO DUAL/MULTI-ARROWS):
@@ -748,8 +809,17 @@ export function MoveByMoveAnalyzer({
   const topPlayerColorLabel = isFlipped ? '♔ White' : '♚ Black';
   const bottomPlayerColorLabel = isFlipped ? '♚ Black' : '♔ White';
 
+  const moveDisplaySan = sandboxState
+    ? sandboxState.notation
+    : currentPly
+    ? `${currentPly.color === 'white' ? `${currentPly.moveNumber}.` : `${currentPly.moveNumber}...`} ${currentPly.notation}`
+    : '';
+
   return (
-    <div className="w-full space-y-7 relative">
+    <div
+      className="w-full space-y-2.5 sm:space-y-7 relative"
+      style={{ overflowAnchor: 'none' }}
+    >
       {/* Floating Keyboard Shortcut / Clipboard Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -766,34 +836,35 @@ export function MoveByMoveAnalyzer({
         )}
       </AnimatePresence>
 
-      {/* Search Header Bar: Real Chess.com Search */}
-      <div className="p-4 sm:p-5 bg-slate-50/90 rounded-2xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-4">
+      {/* Search Header Bar: Ultra-Compact on Mobile (< 640px), Full Header on Desktop */}
+      <div className="p-2 sm:p-5 bg-slate-50/90 rounded-2xl border border-slate-200/90 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
         {/* Username Search Box */}
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 max-w-lg">
+        <form onSubmit={handleSearchSubmit} className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-[200px] max-w-lg">
           <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-emerald-700 font-bold select-none">
+            <span className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-xs sm:text-sm text-emerald-700 font-bold select-none">
               ♟
             </span>
             <input
               type="text"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
-              placeholder="Enter your Chess.com username to load matches..."
-              className="w-full pl-8 pr-3 py-2.5 text-xs sm:text-sm bg-white border-2 border-emerald-600/70 rounded-xl focus:outline-none focus:border-emerald-600 font-semibold text-slate-900 shadow-2xs"
+              placeholder="Chess.com username..."
+              className="w-full pl-7 sm:pl-8 pr-2.5 sm:pr-3 py-1.5 sm:py-2.5 text-xs sm:text-sm bg-white border-2 border-emerald-600/70 rounded-xl focus:outline-none focus:border-emerald-600 font-semibold text-slate-900 shadow-2xs"
             />
           </div>
           <button
             type="submit"
-            className="px-4 py-2.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ring-2 ring-emerald-500/20 whitespace-nowrap"
+            className="px-2.5 sm:px-4 py-1.5 sm:py-2.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.96] rounded-xl flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer shadow-sm ring-2 ring-emerald-500/20 whitespace-nowrap"
           >
             <Search className="w-3.5 h-3.5" />
-            <span>Load My Games &amp; Analyze</span>
+            <span className="sm:hidden">Load</span>
+            <span className="hidden sm:inline">Load My Games &amp; Analyze</span>
           </button>
           {onOpenProfileStats && activeUsername && (
             <button
               type="button"
               onClick={onOpenProfileStats}
-              className="px-3 py-2.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+              className="hidden sm:inline-flex px-3 py-2 sm:py-2.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer whitespace-nowrap shadow-2xs"
               title={`View @${activeUsername} Live Stats`}
             >
               @{activeUsername} Stats
@@ -802,7 +873,7 @@ export function MoveByMoveAnalyzer({
         </form>
 
         {/* Arrow Legend, Keyboard Shortcuts & Recent Matches List Toggle */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="hidden sm:inline-flex items-center gap-3 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 text-[11px] font-semibold text-slate-600 shadow-2xs">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#81b64c]" />
@@ -816,11 +887,15 @@ export function MoveByMoveAnalyzer({
 
           {/* Toggle Recent Matches List */}
           <button
+            type="button"
             onClick={() => setIsMatchFeedOpen(!isMatchFeedOpen)}
-            className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+            className="px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs whitespace-nowrap active:scale-[0.96]"
           >
             <Swords className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
+            <span className="sm:hidden">
+              Games ({recentMatches.length})
+            </span>
+            <span className="hidden sm:inline">
               {activeUsername
                 ? `Recent Matches (${recentMatches.length})`
                 : `Showcase Games (${recentMatches.length})`}
@@ -868,7 +943,7 @@ export function MoveByMoveAnalyzer({
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
-            className="p-4 rounded-2xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-2.5"
+            className="p-3 sm:p-4 rounded-2xl bg-[#0B1912] text-white border border-emerald-800/80 shadow-lg space-y-2"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2 font-bold text-emerald-300">
@@ -889,8 +964,11 @@ export function MoveByMoveAnalyzer({
         )}
       </AnimatePresence>
 
-      {/* Active Match Banner */}
-      <div id="analyzer-board-view" className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-4 scroll-mt-24">
+      {/* Scroll Anchor for Board Review View (Active on both Mobile & Desktop) */}
+      <div id="analyzer-board-view" className="scroll-mt-12 sm:scroll-mt-24" />
+
+      {/* Active Match Banner (Hidden on small mobile screens during single-screen review so the board fits 100dvh, visible on sm+) */}
+      <div className="hidden sm:flex p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs">
             ♟
@@ -936,6 +1014,7 @@ export function MoveByMoveAnalyzer({
 
           {onOpenShare && (
             <button
+              type="button"
               onClick={() =>
                 onOpenShare({
                   title: `${matchAnalysis.whitePlayer.name} vs ${matchAnalysis.blackPlayer.name}`,
@@ -953,19 +1032,77 @@ export function MoveByMoveAnalyzer({
         </div>
       </div>
 
-      {/* Main Split-Screen Dashboard: Left Column (Pixel-Perfect Board) & Right Column (AI Coach) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column (lg:col-span-8): Eval Bar, Board, Sandbox Bar, Toolbar */}
-        <div className="lg:col-span-8 space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            {/* Live Evaluation Bar (Win% Sigmoid + Centipawn / Mate Indicator — Rotates with Board Flip) */}
-            <div className="flex sm:flex-col items-center gap-2 order-2 sm:order-1">
+      {/* Main Split-Screen Dashboard: Left Column (Locked 100dvh Mobile App Viewport / Pixel-Perfect Board) & Right Column (AI Coach) */}
+      <div
+        className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-6 lg:gap-8 items-start"
+        style={{ overflowAnchor: 'none' }}
+      >
+        {/* Left Column (lg:col-span-8): Locked Mobile Coach Banner + Eval Bar + 1:1 Board + Pinned Thumb Dock */}
+        <div
+          className="lg:col-span-8 flex flex-col gap-1.5 sm:gap-3.5"
+          style={{ overflowAnchor: 'none' }}
+        >
+          {/* 1:1 CHESS.COM FIXED-HEIGHT COMPACT MOVE COACH BANNER (Visible on < 1024px directly above the board; strictly h-[68px] so it NEVER shifts the board by even 1px) */}
+          <div
+            className="lg:hidden h-[68px] px-2.5 py-1.5 bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col justify-between select-text overflow-hidden shrink-0"
+            style={{ overflowAnchor: 'none' }}
+          >
+            {/* Row 1: Single-line Header with Badge, Move SAN, Check/Checkmate Alert, Best Alternative & Eval Score */}
+            <div className="h-[24px] flex items-center justify-between gap-1.5 overflow-x-auto whitespace-nowrap shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {sandboxState ? (
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                    What-If
+                  </span>
+                ) : (
+                  currentPly && <EvalBadge classification={currentPly.classification} size="xs" />
+                )}
+
+                <span className="font-mono text-xs font-extrabold text-slate-900">
+                  {moveDisplaySan}
+                </span>
+
+                {positionCheckState.isCheckmate && (
+                  <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-[#dc2626] to-[#b91c1c] text-white text-[10px] font-black tracking-wide uppercase shadow-2xs">
+                    # Checkmate · {positionCheckState.winnerSide} Wins
+                  </span>
+                )}
+
+                {positionCheckState.inCheck && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-[#dc2626] text-white text-[10px] font-black tracking-wide uppercase shadow-2xs">
+                    + Check
+                  </span>
+                )}
+
+                {!sandboxState && currentPly?.bestAlternative && (
+                  <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    Best: {currentPly.bestAlternative}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="font-mono text-[11px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 tabular-nums">
+                  {activeEvalScore}
+                </span>
+              </div>
+            </div>
+
+            {/* Row 2: Fixed-height Explanation Box (scrolls internally if longer than 2 lines so container height never changes) */}
+            <div className="h-[34px] overflow-y-auto overscroll-contain pr-1 text-[11px] leading-[16px] text-slate-600 font-normal select-text">
+              {sandboxState ? sandboxState.explanation : currentPly?.explanation}
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-4">
+            {/* Live Evaluation Bar (Slim Horizontal Bar Above Board on Mobile, Vertical Bar on sm+) */}
+            <div className="w-full sm:w-auto flex sm:flex-col items-center justify-between sm:justify-center gap-2 order-1 sm:order-1">
               <div
-                className={`relative w-48 sm:w-6 h-5 sm:h-96 bg-[#262421] rounded-full overflow-hidden flex sm:flex-col ${
+                className={`relative flex-1 sm:flex-none w-full sm:w-6 h-2.5 sm:h-96 bg-[#262421] rounded-full overflow-hidden flex sm:flex-col ${
                   isFlipped ? 'justify-start' : 'justify-end'
-                } p-0.5 border-2 border-slate-700 shadow-xl`}
+                } p-0.5 border border-slate-700 sm:border-2 shadow-xs sm:shadow-xl`}
               >
-                {/* Top Side Win% Indicator */}
+                {/* Top Side Win% Indicator (Desktop Vertical) */}
                 <span
                   className={`hidden sm:block absolute top-2 left-0 right-0 text-center font-mono text-[9px] font-bold select-none z-10 tabular-nums ${
                     isFlipped ? 'text-slate-700' : 'text-slate-300'
@@ -974,16 +1111,24 @@ export function MoveByMoveAnalyzer({
                   {isFlipped ? `${whiteAdvantagePct}%` : `${blackAdvantagePct}%`}
                 </span>
 
-                {/* White Smooth Advantage Height Bar */}
+                {/* Desktop Vertical Fill */}
                 <div
-                  className="bg-white rounded-full shadow-md transition-all duration-400 ease-out"
+                  className="hidden sm:block bg-white rounded-full shadow-md transition-all duration-150 ease-out"
                   style={{
                     height: `${evalHeight}%`,
                     width: '100%',
                   }}
                 />
 
-                {/* Bottom Side Win% Indicator */}
+                {/* Mobile Horizontal Fill */}
+                <div
+                  className="sm:hidden bg-white h-full rounded-full transition-all duration-150 ease-out"
+                  style={{
+                    width: `${evalHeight}%`,
+                  }}
+                />
+
+                {/* Bottom Side Win% Indicator (Desktop Vertical) */}
                 <span
                   className={`hidden sm:block absolute bottom-2 left-0 right-0 text-center font-mono text-[9px] font-bold select-none z-10 tabular-nums ${
                     isFlipped ? 'text-slate-300' : 'text-slate-700'
@@ -993,24 +1138,24 @@ export function MoveByMoveAnalyzer({
                 </span>
               </div>
 
-              {/* Exact Stockfish / Sigmoid Numeric Value */}
-              <div className="text-center font-mono text-xs font-bold text-slate-800 tabular-nums bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+              {/* Exact Stockfish / Sigmoid Numeric Value (Visible on sm+ since Mobile Coach Banner already displays it right above) */}
+              <div className="hidden sm:block text-center font-mono text-xs font-bold text-slate-800 tabular-nums bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs shrink-0">
                 {activeEvalScore}
               </div>
             </div>
 
             {/* Pixel-Perfect Tournament Green/Ivory Chessboard Component with Top/Bottom Player Strips */}
-            <div className="order-1 sm:order-2 w-full flex flex-col items-center gap-2">
+            <div className="order-2 sm:order-2 w-full flex flex-col items-center gap-1 sm:gap-2">
               {/* Top Player Orientation Bar */}
-              <div className="w-full max-w-[720px] flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-                <div className="flex items-center gap-2 font-bold text-slate-800">
-                  <span className="px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-mono text-[11px]">
+              <div className="w-full max-w-[min(100%,calc(100dvh-255px))] sm:max-w-[720px] flex items-center justify-between px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] sm:text-xs">
+                <div className="flex items-center gap-1.5 sm:gap-2 font-bold text-slate-800 truncate">
+                  <span className="px-1.5 sm:px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-mono text-[10px] sm:text-[11px]">
                     {topPlayerColorLabel}
                   </span>
-                  <span>{topPlayer.name}</span>
+                  <span className="truncate">{topPlayer.name}</span>
                   <span className="font-mono text-slate-500 tabular-nums">({topPlayer.rating})</span>
                 </div>
-                <span className="font-mono text-[11px] font-bold text-emerald-700 tabular-nums">
+                <span className="font-mono text-[10px] sm:text-[11px] font-bold text-emerald-700 tabular-nums shrink-0">
                   CAPS2: {topPlayerAccuracy}%
                 </span>
               </div>
@@ -1028,24 +1173,222 @@ export function MoveByMoveAnalyzer({
               />
 
               {/* Bottom Player Orientation Bar */}
-              <div className="w-full max-w-[720px] flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-                <div className="flex items-center gap-2 font-bold text-slate-800">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono text-[11px]">
+              <div className="w-full max-w-[min(100%,calc(100dvh-255px))] sm:max-w-[720px] flex items-center justify-between px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] sm:text-xs">
+                <div className="flex items-center gap-1.5 sm:gap-2 font-bold text-slate-800 truncate">
+                  <span className="px-1.5 sm:px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono text-[10px] sm:text-[11px]">
                     {bottomPlayerColorLabel}
                   </span>
-                  <span>{bottomPlayer.name}</span>
+                  <span className="truncate">{bottomPlayer.name}</span>
                   <span className="font-mono text-slate-500 tabular-nums">({bottomPlayer.rating})</span>
                 </div>
-                <span className="font-mono text-[11px] font-bold text-emerald-700 tabular-nums">
+                <span className="font-mono text-[10px] sm:text-[11px] font-bold text-emerald-700 tabular-nums shrink-0">
                   CAPS2: {bottomPlayerAccuracy}%
                 </span>
               </div>
             </div>
           </div>
 
+          {/* Pinned Thumb-Friendly Control Dock Directly Underneath the Board (48px–50px Mobile Touch Targets, 0ms Response, Zero Focus Scroll Jumps) */}
+          <div
+            className="p-1.5 sm:p-3 bg-slate-50 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-1.5 sm:gap-3 select-none"
+            style={{ touchAction: 'manipulation', overflowAnchor: 'none' }}
+          >
+            {/* Primary Thumb-Friendly Step, Play & Flip Navigation Dock */}
+            <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectPly(0)}
+                disabled={activePlyIndex === 0 && !sandboxState}
+                style={{ touchAction: 'manipulation' }}
+                className="min-h-[48px] sm:min-h-0 px-2.5 sm:p-2 rounded-xl bg-white sm:bg-transparent border border-slate-200/90 sm:border-transparent text-slate-700 hover:bg-slate-200 active:scale-[0.96] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-transform flex items-center justify-center shadow-2xs sm:shadow-none"
+                title="First Move (|◀)"
+              >
+                <SkipBack className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectPly(Math.max(0, activePlyIndex - 1))}
+                disabled={activePlyIndex === 0 && !sandboxState}
+                style={{ touchAction: 'manipulation' }}
+                className="flex-1 sm:flex-none min-h-[48px] sm:min-h-0 px-3 sm:p-2 rounded-xl bg-white sm:bg-transparent border border-slate-200/90 sm:border-transparent text-slate-900 hover:bg-slate-200 active:scale-[0.96] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-transform flex items-center justify-center gap-1 font-extrabold text-xs shadow-2xs sm:shadow-none select-none"
+                title="Previous Move (◀ or Left Arrow Key)"
+              >
+                <ChevronLeft className="w-5 h-5 sm:w-4 sm:h-4" />
+                <span className="sm:hidden">Prev</span>
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (sandboxState) setSandboxState(null);
+                  setIsPlaying((prev) => !prev);
+                }}
+                style={{ touchAction: 'manipulation' }}
+                className={`min-h-[48px] sm:min-h-0 px-3.5 sm:px-4 py-2 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition-transform active:scale-[0.96] cursor-pointer shadow-xs select-none ${
+                  isPlaying
+                    ? 'bg-amber-600 text-white hover:bg-amber-700'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-700/20'
+                }`}
+                title="Auto Play / Pause (Spacebar)"
+              >
+                {isPlaying ? <Pause className="w-4 h-4 sm:w-3.5 sm:h-3.5" /> : <Play className="w-4 h-4 sm:w-3.5 sm:h-3.5" />}
+                <span>{isPlaying ? 'Pause' : 'Play'}</span>
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectPly(Math.min(matchAnalysis.plies.length - 1, activePlyIndex + 1))}
+                disabled={activePlyIndex === matchAnalysis.plies.length - 1 && !sandboxState}
+                style={{ touchAction: 'manipulation' }}
+                className="flex-1 sm:flex-none min-h-[48px] sm:min-h-0 px-3 sm:p-2 rounded-xl bg-white sm:bg-transparent border border-slate-200/90 sm:border-transparent text-slate-900 hover:bg-slate-200 active:scale-[0.96] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-transform flex items-center justify-center gap-1 font-extrabold text-xs shadow-2xs sm:shadow-none select-none"
+                title="Next Move (▶ or Right Arrow Key)"
+              >
+                <span className="sm:hidden">Next</span>
+                <ChevronRight className="w-5 h-5 sm:w-4 sm:h-4" />
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectPly(matchAnalysis.plies.length - 1)}
+                disabled={activePlyIndex === matchAnalysis.plies.length - 1 && !sandboxState}
+                style={{ touchAction: 'manipulation' }}
+                className="min-h-[48px] sm:min-h-0 px-2.5 sm:p-2 rounded-xl bg-white sm:bg-transparent border border-slate-200/90 sm:border-transparent text-slate-700 hover:bg-slate-200 active:scale-[0.96] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-transform flex items-center justify-center shadow-2xs sm:shadow-none"
+                title="Last Move (▶|)"
+              >
+                <SkipForward className="w-4 h-4" />
+              </button>
+
+              {/* Mobile-Inline Flip Board Button inside the 48px Thumb Dock */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setIsFlipped((prev) => !prev)}
+                style={{ touchAction: 'manipulation' }}
+                className={`sm:hidden min-h-[48px] px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-transform active:scale-[0.96] shadow-2xs ${
+                  isFlipped
+                    ? 'bg-emerald-600 text-white border-emerald-700'
+                    : 'bg-white border-slate-200/90 text-slate-800'
+                }`}
+                title="Flip Board Perspective"
+              >
+                <RotateCcw className={`w-4 h-4 transition-transform duration-300 ${isFlipped ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {/* Secondary Controls Row: Speed Selector, Volume Control, Desktop Flip & Mobile PGN Drawer Button */}
+            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
+              <div className="hidden sm:flex items-center bg-white rounded-lg border border-slate-200 p-0.5 text-[11px] font-bold">
+                {[0.5, 1, 1.5, 2].map((spd) => (
+                  <button
+                    type="button"
+                    key={spd}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setPlaySpeed(spd)}
+                    className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                      playSpeed === spd
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
+              </div>
+
+              {/* Sound Volume Control Pill (Mute Toggle + 0–100% Slider + ↑/↓/+/- Shortcut Support) */}
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-slate-200 shadow-2xs"
+                title="Move Sound Volume (Use ↑/↓ or +/- keys to adjust by ±10%)"
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    const nextMuted = !isMuted;
+                    setIsMuted(nextMuted);
+                    chessAudio.setMuted(nextMuted);
+                    if (!nextMuted && volumePct === 0) {
+                      applyVolumePct(80, true);
+                    } else {
+                      triggerToast(nextMuted ? 'Move Audio Muted' : `Move Sound Volume: ${volumePct}%`);
+                    }
+                  }}
+                  className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                    isMuted || volumePct === 0
+                      ? 'text-slate-400 hover:text-slate-600'
+                      : 'text-emerald-700 hover:text-emerald-800'
+                  }`}
+                  title={isMuted || volumePct === 0 ? 'Unmute Move Audio' : 'Mute Move Audio'}
+                >
+                  {isMuted || volumePct === 0 ? (
+                    <VolumeX className="w-3.5 h-3.5" />
+                  ) : (
+                    <Volume2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={isMuted ? 0 : volumePct}
+                  onChange={(e) => applyVolumePct(Number(e.target.value), false)}
+                  className="w-14 sm:w-16 h-1.5 accent-emerald-600 bg-slate-200 rounded-lg cursor-pointer"
+                  aria-label="Move Sound Volume"
+                />
+                <span className="font-mono text-[10px] font-bold text-slate-600 tabular-nums w-7 text-right">
+                  {isMuted ? '0%' : `${volumePct}%`}
+                </span>
+              </div>
+
+              {/* Dedicated Flip Board Button (Desktop & Tablet sm+) */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setIsFlipped((prev) => !prev)}
+                className={`hidden sm:flex px-3 py-1.5 rounded-xl border text-xs font-bold items-center gap-1.5 cursor-pointer transition-all shadow-2xs active:scale-[0.96] ${
+                  isFlipped
+                    ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                    : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-800'
+                }`}
+                title="Flip Board Perspective (White / Black)"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 transition-transform duration-300 ${isFlipped ? 'rotate-180' : ''}`} />
+                <span>Flip ({isFlipped ? 'B' : 'W'})</span>
+              </button>
+
+              {/* Mobile-Only Toggle for Collapsible Bottom PGN / Move History Sheet */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setIsMobileMoveListOpen((prev) => !prev)}
+                style={{ touchAction: 'manipulation' }}
+                className="lg:hidden px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 active:scale-[0.96] text-slate-800 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-transform"
+              >
+                <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  PGN Moves ({activePlyIndex + 1}/{matchAnalysis.plies.length})
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    isMobileMoveListOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           {/* Interactive What-If Sandbox Status Bar & Instant Reset Button */}
           <div
-            className={`px-4 py-2.5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs transition-all ${
+            className={`${
+              sandboxState ? 'flex' : 'hidden sm:flex'
+            } px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl border flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs transition-all ${
               sandboxState
                 ? 'bg-emerald-50/95 border-emerald-300 text-emerald-950 shadow-xs'
                 : 'bg-white border-slate-200/80 text-slate-600'
@@ -1080,6 +1423,7 @@ export function MoveByMoveAnalyzer({
             {sandboxState && (
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setSandboxState(null)}
                 className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
               >
@@ -1088,298 +1432,208 @@ export function MoveByMoveAnalyzer({
               </button>
             )}
           </div>
-
-          {/* Move-Control Toolbar Underneath */}
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-            {/* Step & Play Navigation */}
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => handleSelectPly(0)}
-                disabled={activePlyIndex === 0 && !sandboxState}
-                className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="First Move (|◀)"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSelectPly(Math.max(0, activePlyIndex - 1))}
-                disabled={activePlyIndex === 0 && !sandboxState}
-                className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="Previous Move (◀ or Left Arrow Key)"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => {
-                  if (sandboxState) setSandboxState(null);
-                  setIsPlaying((prev) => !prev);
-                }}
-                className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
-                  isPlaying
-                    ? 'bg-amber-600 text-white hover:bg-amber-700'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-700/20'
-                }`}
-                title="Auto Play / Pause (Spacebar)"
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                <span>{isPlaying ? 'Pause' : 'Play'}</span>
-              </button>
-
-              <button
-                onClick={() => handleSelectPly(Math.min(matchAnalysis.plies.length - 1, activePlyIndex + 1))}
-                disabled={activePlyIndex === matchAnalysis.plies.length - 1 && !sandboxState}
-                className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="Next Move (▶ or Right Arrow Key)"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSelectPly(matchAnalysis.plies.length - 1)}
-                disabled={activePlyIndex === matchAnalysis.plies.length - 1 && !sandboxState}
-                className="p-2 rounded-xl text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                title="Last Move (▶|)"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Speed Selector, Mini Volume Control & Flip Board Button */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center bg-white rounded-lg border border-slate-200 p-0.5 text-[11px] font-bold">
-                {[0.5, 1, 1.5, 2].map((spd) => (
-                  <button
-                    key={spd}
-                    onClick={() => setPlaySpeed(spd)}
-                    className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                      playSpeed === spd
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {spd}x
-                  </button>
-                ))}
-              </div>
-
-              {/* Sound Volume Control Pill (Mute Toggle + 0–100% Slider + ↑/↓/+/- Shortcut Support) */}
-              <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-slate-200 shadow-2xs"
-                title="Move Sound Volume (Use ↑/↓ or +/- keys to adjust by ±10%)"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMuted = !isMuted;
-                    setIsMuted(nextMuted);
-                    chessAudio.setMuted(nextMuted);
-                    if (!nextMuted && volumePct === 0) {
-                      applyVolumePct(80, true);
-                    } else {
-                      triggerToast(nextMuted ? 'Move Audio Muted' : `Move Sound Volume: ${volumePct}%`);
-                    }
-                  }}
-                  className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                    isMuted || volumePct === 0
-                      ? 'text-slate-400 hover:text-slate-600'
-                      : 'text-emerald-700 hover:text-emerald-800'
-                  }`}
-                  title={isMuted || volumePct === 0 ? 'Unmute Move Audio' : 'Mute Move Audio'}
-                >
-                  {isMuted || volumePct === 0 ? (
-                    <VolumeX className="w-3.5 h-3.5" />
-                  ) : (
-                    <Volume2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={10}
-                  value={isMuted ? 0 : volumePct}
-                  onChange={(e) => applyVolumePct(Number(e.target.value), false)}
-                  className="w-16 h-1.5 accent-emerald-600 bg-slate-200 rounded-lg cursor-pointer"
-                  aria-label="Move Sound Volume"
-                />
-                <span className="font-mono text-[10px] font-bold text-slate-600 tabular-nums w-7 text-right">
-                  {isMuted ? '0%' : `${volumePct}%`}
-                </span>
-              </div>
-
-              {/* Dedicated Flip Board Button */}
-              <button
-                type="button"
-                onClick={() => setIsFlipped((prev) => !prev)}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs ${
-                  isFlipped
-                    ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                    : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-800'
-                }`}
-                title="Flip Board Perspective (White / Black)"
-              >
-                <RotateCcw className={`w-3.5 h-3.5 transition-transform duration-300 ${isFlipped ? 'rotate-180' : ''}`} />
-                <span>Flip Board ({isFlipped ? 'Black' : 'White'})</span>
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Right Column (lg:col-span-4): The AI Coach Feed & Interactive Move Inspector */}
-        <div className="lg:col-span-4 space-y-4">
-          {/* Interactive Move Inspector (The Explanation Card) */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={sandboxState ? `sandbox-${sandboxState.moveCount}` : currentPly?.plyIndex ?? 0}
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.16 }}
-              className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3 select-text"
+        {/* Mobile Backdrop Scrim when Bottom PGN Move Drawer is Open (< 1024px) */}
+        {isMobileMoveListOpen && (
+          <div
+            onClick={() => setIsMobileMoveListOpen(false)}
+            className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] lg:hidden"
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Right Column (lg:col-span-4 on Desktop, Collapsible Bottom Drawer Sheet on Mobile < 1024px so it NEVER pushes the board off-screen) */}
+        <div
+          className={`${
+            isMobileMoveListOpen
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[76dvh] overflow-y-auto overscroll-contain bg-white dark:bg-[#111111] rounded-t-3xl border-t border-slate-200 shadow-2xl p-4 block'
+              : 'hidden lg:block'
+          } lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:bg-transparent lg:rounded-none lg:border-none lg:shadow-none lg:p-0 lg:col-span-4 space-y-4`}
+          style={{ overflowAnchor: 'none' }}
+        >
+          {/* Mobile Drawer Handle & Close Header (< 1024px) */}
+          <div className="lg:hidden flex items-center justify-between pb-2 border-b border-slate-200/80">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-600" />
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                PGN Move History &amp; Engine Lines
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMobileMoveListOpen(false)}
+              className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+              title="Close Move Drawer"
             >
-              {/* Card Header with Official Badge */}
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold text-slate-900">
-                    {sandboxState ? sandboxState.notation : currentPly?.notation}
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Interactive Move Inspector (Instant 0ms Updates with Zero Unmount/Remount Layout Jitter) */}
+          <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3 select-text">
+            {/* Decisive Checkmate Banner inside Move Coach Card */}
+            {positionCheckState.isCheckmate && (
+              <div className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#dc2626] to-[#b91c1c] text-white text-xs font-black uppercase tracking-wider flex items-center justify-between shadow-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white text-[#b91c1c] font-black text-[11px]">
+                    #
                   </span>
-                  {sandboxState ? (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                      What-If Line
-                    </span>
-                  ) : (
-                    currentPly && (
-                      <EvalBadge classification={currentPly.classification} size="sm" />
-                    )
-                  )}
-                  {!sandboxState && currentPly?.outOfBook && (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
-                      Out of Book
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {!sandboxState && typeof currentPly?.moveAccuracy === 'number' && (
-                    <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 tabular-nums">
-                      CAPS2: {currentPly.moveAccuracy.toFixed(1)}%
-                    </span>
-                  )}
-                  <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 tabular-nums">
-                    Eval: {activeEvalScore}
-                  </span>
-                </div>
+                  <span>Checkmate — {positionCheckState.winnerSide} Wins</span>
+                </span>
+                <span className="font-mono text-[11px] bg-white/20 px-2 py-0.5 rounded">
+                  {matchAnalysis.result}
+                </span>
               </div>
+            )}
 
-              {/* Crystal-clear Human Language Explanation */}
-              <p className="text-xs text-slate-600 leading-relaxed font-normal select-text">
-                {sandboxState ? sandboxState.explanation : currentPly?.explanation}
-              </p>
-
-              {/* Tactical Delta Details, Best Alternative, & MultiPV=3 Engine Lines */}
-              {!sandboxState &&
-                (currentPly?.evalDelta ||
-                  currentPly?.bestAlternative ||
-                  currentPly?.pvLine ||
-                  (currentPly?.multiPv && currentPly.multiPv.length > 0) ||
-                  currentPly?.tacticalThreat) && (
-                  <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs select-text">
-                    {currentPly.evalDelta && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-medium">Evaluation Swing:</span>
-                        <span
-                          className={`font-mono font-bold tabular-nums ${
-                            currentPly.evalDelta.startsWith('+') ? 'text-emerald-700' : 'text-rose-600'
-                          }`}
-                        >
-                          {currentPly.evalDelta} Swing
-                        </span>
-                      </div>
-                    )}
-
-                    {typeof currentPly.winProbLoss === 'number' && currentPly.winProbLoss > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-medium">Win-Probability Loss:</span>
-                        <span className="font-mono font-bold text-slate-800 tabular-nums">
-                          -{currentPly.winProbLoss.toFixed(1)}% Win%
-                        </span>
-                      </div>
-                    )}
-
-                    {currentPly.bestAlternative && (
-                      <div className="text-slate-800 flex items-center justify-between gap-2 pt-0.5">
-                        <span className="font-semibold text-slate-700">Best Engine Move:</span>
-                        <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                          {currentPly.bestAlternative}
-                        </span>
-                      </div>
-                    )}
-
-                    {currentPly.pvLine && (
-                      <div
-                        className="text-slate-800 flex flex-col gap-1.5 pt-0.5"
-                        onMouseEnter={() => setHoverFollowUpArrow(true)}
-                        onMouseLeave={() => setHoverFollowUpArrow(false)}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold text-slate-500">
-                            Best Continuation (PV1):
-                          </span>
-                          {currentPly.followUpFrom && currentPly.followUpTo && (
-                            <button
-                              type="button"
-                              onClick={() => setShowFollowUpArrow((prev) => !prev)}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer ${
-                                showFollowUpArrow
-                                  ? 'bg-[#81b64c] text-white border-[#6ea03c]'
-                                  : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
-                              }`}
-                            >
-                              {showFollowUpArrow ? 'Showing Next Best Move' : 'Preview Next Best Move'}
-                            </button>
-                          )}
-                        </div>
-                        <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90 select-text">
-                          {currentPly.pvLine}
-                        </span>
-                      </div>
-                    )}
-
-                    {currentPly.multiPv && currentPly.multiPv.length > 1 && (
-                      <div className="pt-1 border-t border-slate-200/70 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                          MultiPV Candidate Lines (Depth {currentPly.engineDepth || 18})
-                        </span>
-                        {currentPly.multiPv.slice(0, 3).map((cand) => (
-                          <div
-                            key={cand.multipv}
-                            className="flex items-center justify-between gap-2 text-[11px] font-mono bg-white px-2 py-1 rounded border border-slate-200/70 select-text"
-                          >
-                            <span className="truncate text-slate-700">
-                              <strong className="text-emerald-700">PV{cand.multipv}:</strong>{' '}
-                              {cand.pvLine || cand.bestMoveSan}
-                            </span>
-                            <span className="text-slate-500 shrink-0 tabular-nums">
-                              {cand.mate
-                                ? `M${Math.abs(cand.mate)}`
-                                : cand.pawns >= 0
-                                ? `+${cand.pawns.toFixed(1)}`
-                                : cand.pawns.toFixed(1)}{' '}
-                              ({cand.winProb.toFixed(0)}%)
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {currentPly.tacticalThreat && (
-                      <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight select-text">
-                        • {currentPly.tacticalThreat}
-                      </div>
-                    )}
-                  </div>
+            {/* Card Header with Official Badge */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-slate-900">
+                  {sandboxState ? sandboxState.notation : currentPly?.notation}
+                </span>
+                {sandboxState ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                    What-If Line
+                  </span>
+                ) : (
+                  currentPly && (
+                    <EvalBadge classification={currentPly.classification} size="sm" />
+                  )
                 )}
-            </motion.div>
-          </AnimatePresence>
+                {positionCheckState.inCheck && (
+                  <span className="px-2 py-0.5 rounded-full bg-[#dc2626] text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
+                    CHECK +
+                  </span>
+                )}
+                {!sandboxState && currentPly?.outOfBook && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                    Out of Book
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {!sandboxState && typeof currentPly?.moveAccuracy === 'number' && (
+                  <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 tabular-nums">
+                    CAPS2: {currentPly.moveAccuracy.toFixed(1)}%
+                  </span>
+                )}
+                <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 tabular-nums">
+                  Eval: {activeEvalScore}
+                </span>
+              </div>
+            </div>
+
+            {/* Crystal-clear Human Language Explanation */}
+            <p className="text-xs text-slate-600 leading-relaxed font-normal select-text">
+              {sandboxState ? sandboxState.explanation : currentPly?.explanation}
+            </p>
+
+            {/* Tactical Delta Details, Best Alternative, & MultiPV=3 Engine Lines */}
+            {!sandboxState &&
+              (currentPly?.evalDelta ||
+                currentPly?.bestAlternative ||
+                currentPly?.pvLine ||
+                (currentPly?.multiPv && currentPly.multiPv.length > 0) ||
+                currentPly?.tacticalThreat) && (
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2 text-xs select-text">
+                  {currentPly.evalDelta && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Evaluation Swing:</span>
+                      <span
+                        className={`font-mono font-bold tabular-nums ${
+                          currentPly.evalDelta.startsWith('+') ? 'text-emerald-700' : 'text-rose-600'
+                        }`}
+                      >
+                        {currentPly.evalDelta} Swing
+                      </span>
+                    </div>
+                  )}
+
+                  {typeof currentPly.winProbLoss === 'number' && currentPly.winProbLoss > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Win-Probability Loss:</span>
+                      <span className="font-mono font-bold text-slate-800 tabular-nums">
+                        -{currentPly.winProbLoss.toFixed(1)}% Win%
+                      </span>
+                    </div>
+                  )}
+
+                  {currentPly.bestAlternative && (
+                    <div className="text-slate-800 flex items-center justify-between gap-2 pt-0.5">
+                      <span className="font-semibold text-slate-700">Best Engine Move:</span>
+                      <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                        {currentPly.bestAlternative}
+                      </span>
+                    </div>
+                  )}
+
+                  {currentPly.pvLine && (
+                    <div
+                      className="text-slate-800 flex flex-col gap-1.5 pt-0.5"
+                      onMouseEnter={() => setHoverFollowUpArrow(true)}
+                      onMouseLeave={() => setHoverFollowUpArrow(false)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          Best Continuation (PV1):
+                        </span>
+                        {currentPly.followUpFrom && currentPly.followUpTo && (
+                          <button
+                            type="button"
+                            onClick={() => setShowFollowUpArrow((prev) => !prev)}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer ${
+                              showFollowUpArrow
+                                ? 'bg-[#81b64c] text-white border-[#6ea03c]'
+                                : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                            }`}
+                          >
+                            {showFollowUpArrow ? 'Showing Next Best Move' : 'Preview Next Best Move'}
+                          </button>
+                        )}
+                      </div>
+                      <span className="font-mono text-[11px] text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200/90 select-text">
+                        {currentPly.pvLine}
+                      </span>
+                    </div>
+                  )}
+
+                  {currentPly.multiPv && currentPly.multiPv.length > 1 && (
+                    <div className="pt-1 border-t border-slate-200/70 space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        MultiPV Candidate Lines (Depth {currentPly.engineDepth || 18})
+                      </span>
+                      {currentPly.multiPv.slice(0, 3).map((cand) => (
+                        <div
+                          key={cand.multipv}
+                          className="flex items-center justify-between gap-2 text-[11px] font-mono bg-white px-2 py-1 rounded border border-slate-200/70 select-text"
+                        >
+                          <span className="truncate text-slate-700">
+                            <strong className="text-emerald-700">PV{cand.multipv}:</strong>{' '}
+                            {cand.pvLine || cand.bestMoveSan}
+                          </span>
+                          <span className="text-slate-500 shrink-0 tabular-nums">
+                            {cand.mate
+                              ? `M${Math.abs(cand.mate)}`
+                              : cand.pawns >= 0
+                              ? `+${cand.pawns.toFixed(1)}`
+                              : cand.pawns.toFixed(1)}{' '}
+                            ({cand.winProb.toFixed(0)}%)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentPly.tacticalThreat && (
+                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-tight select-text">
+                      • {currentPly.tacticalThreat}
+                    </div>
+                  )}
+                </div>
+              )}
+          </div>
 
           {/* The AI Coach Move Feed with Dedicated Copy Game Log Button */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden select-text">
@@ -1420,17 +1674,19 @@ export function MoveByMoveAnalyzer({
 
             <div
               ref={moveFeedContainerRef}
-              className="max-h-72 overflow-y-auto divide-y divide-slate-100 p-1.5 scroll-smooth select-text"
+              className="max-h-64 sm:max-h-72 overflow-y-auto overscroll-contain divide-y divide-slate-100 p-1.5 select-text relative"
             >
               {matchAnalysis.plies.map((ply, idx) => {
                 const isActive = activePlyIndex === idx && !sandboxState;
                 const meta = CLASSIFICATION_META[ply.classification] || CLASSIFICATION_META.good;
                 return (
                   <button
+                    type="button"
                     key={idx}
                     ref={isActive ? activeMoveRowRef : null}
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelectPly(idx)}
-                    className={`w-full px-3 py-2.5 flex items-center justify-between text-xs transition-all cursor-pointer text-left rounded-xl ${
+                    className={`w-full px-3 py-2.5 flex items-center justify-between text-xs transition-colors cursor-pointer text-left rounded-xl ${
                       isActive
                         ? 'bg-emerald-50/90 border border-emerald-300/80 font-bold text-slate-900 shadow-2xs'
                         : 'hover:bg-slate-50 text-slate-700'
