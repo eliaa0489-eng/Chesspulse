@@ -27,7 +27,11 @@ import {
   AllTimeCareerScanProgress,
   AllTimeCareerAggregate,
 } from '../services/chessComApi';
-import { analyzeMatchForDashboardFast } from '../services/pgnAnalyzer';
+import {
+  analyzeMatchForDashboardFast,
+  incrementDeepScanRunId,
+  waitIfSingleMatchReviewActive,
+} from '../services/pgnAnalyzer';
 import { ChessComMatch } from '../types/chess';
 
 interface MetricCardProps {
@@ -397,6 +401,7 @@ export function PerformanceDashboard({
   };
 
   const handleStopDeepAllTimeScan = () => {
+    incrementDeepScanRunId();
     careerScanAbortRef.current?.abort();
     setCareerProgress((prev) =>
       prev
@@ -412,6 +417,7 @@ export function PerformanceDashboard({
   useEffect(() => {
     // When no username is connected yet, keep instant Showcase Demo data with zero network calls!
     if (!connectedHandle) {
+      incrementDeepScanRunId();
       careerScanAbortRef.current?.abort();
       setLiveStats(SHOWCASE_DEMO_STATS);
       setAnalyzedPoints(SHOWCASE_DEMO_POINTS);
@@ -423,6 +429,7 @@ export function PerformanceDashboard({
     }
 
     let isCancelled = false;
+    incrementDeepScanRunId();
     careerScanAbortRef.current?.abort();
 
     async function loadRealPerformanceData() {
@@ -486,9 +493,13 @@ export function PerformanceDashboard({
           const chronological = [...rawMatches].sort((a, b) => a.endTime - b.endTime);
           const points: RealAnalyzedGamePoint[] = [];
 
-          // Non-blocking chunked loop (2 games per frame yield) so the main thread stays at 60 FPS
+          // Non-blocking sequential loop that yields between games and pauses automatically
+          // whenever the user opens a single match for Game Review
           for (let i = 0; i < chronological.length; i++) {
             if (isCancelled) return;
+            await waitIfSingleMatchReviewActive();
+            if (isCancelled) return;
+
             const match = chronological[i];
             const userSide = match.userColor === 'white' ? match.white : match.black;
             const oppSide = match.userColor === 'white' ? match.black : match.white;
@@ -514,9 +525,7 @@ export function PerformanceDashboard({
               blunderMoves: fastSummary.blunderMoves,
             });
 
-            if ((i + 1) % 2 === 0) {
-              await new Promise<void>((resolve) => setTimeout(resolve, 0));
-            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 4));
           }
 
           if (!isCancelled) {

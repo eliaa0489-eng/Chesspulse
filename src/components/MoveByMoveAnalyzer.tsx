@@ -50,6 +50,10 @@ import {
   evaluatePositionMultiPly,
   enrichAnalysisWithCloudEval,
   computeWinProbability,
+  cancelActiveMatchAnalysis,
+  getMatchCacheKey,
+  getCachedMatchAnalysis,
+  setCachedMatchAnalysis,
 } from '../services/pgnAnalyzer';
 import { ShareData } from './ShareModal';
 
@@ -232,6 +236,7 @@ export function MoveByMoveAnalyzer({
   // Cleanup any in-flight async analysis on unmount
   useEffect(() => {
     return () => {
+      cancelActiveMatchAnalysis();
       analysisAbortRef.current?.abort();
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
@@ -239,6 +244,7 @@ export function MoveByMoveAnalyzer({
 
   // When a match is selected, analyze its PGN deeply and asynchronously with live progress updates
   const handleSelectMatch = (match: ChessComMatch, shouldScrollToBoard = true) => {
+    cancelActiveMatchAnalysis();
     analysisAbortRef.current?.abort();
     const controller = new AbortController();
     analysisAbortRef.current = controller;
@@ -262,9 +268,26 @@ export function MoveByMoveAnalyzer({
       }, 100);
     }
 
+    const targetHandle = activeUsername || match.white.username;
+    const cacheKey = getMatchCacheKey(match.pgn || '', targetHandle);
+    const cachedAnalysis = getCachedMatchAnalysis(cacheKey);
+    if (cachedAnalysis) {
+      setDeepProgress(null);
+      setMatchAnalysis(cachedAnalysis);
+      setActivePlyIndex(cachedAnalysis.plies.length - 1);
+      if (
+        cachedAnalysis.detectedPuzzles &&
+        cachedAnalysis.detectedPuzzles.length > 0 &&
+        onPuzzlesGenerated
+      ) {
+        onPuzzlesGenerated(cachedAnalysis.detectedPuzzles);
+      }
+      return;
+    }
+
     analyzePgnAsync(
       match.pgn,
-      activeUsername || match.white.username,
+      targetHandle,
       {
         whiteName: match.white.username,
         whiteRating: match.white.rating,
@@ -297,15 +320,16 @@ export function MoveByMoveAnalyzer({
           onPuzzlesGenerated(analyzed.detectedPuzzles);
         }
 
-        // Enrich critical positions asynchronously with Lichess Cloud Evaluation MultiPV=3
+        // Enrich critical positions asynchronously with Lichess Cloud Evaluation MultiPV=2
         return enrichAnalysisWithCloudEval(analyzed, controller.signal).then((enriched) => {
           if (enriched && !controller.signal.aborted) {
+            setCachedMatchAnalysis(cacheKey, enriched);
             setMatchAnalysis((current) => (current.id === analyzed.id ? enriched : current));
           }
           if (!controller.signal.aborted) {
             setTimeout(() => {
               setDeepProgress((curr) => (curr && curr.percent >= 100 ? null : curr));
-            }, 1400);
+            }, 900);
           }
         });
       })
@@ -319,6 +343,10 @@ export function MoveByMoveAnalyzer({
   // Fetch lightweight match metadata ONLY when a user account has been entered/connected.
   // Full move-by-move PGN Game Review runs lazily ONLY when the user clicks a specific match.
   useEffect(() => {
+    cancelActiveMatchAnalysis();
+    analysisAbortRef.current?.abort();
+    setDeepProgress(null);
+
     const cleanUser = activeUsername.trim();
     if (!cleanUser) {
       setRecentMatches(SHOWCASE_DEMO_MATCHES);
@@ -358,6 +386,9 @@ export function MoveByMoveAnalyzer({
     e.preventDefault();
     const clean = usernameInput.trim().replace(/^@/, '');
     if (!clean) return;
+    cancelActiveMatchAnalysis();
+    analysisAbortRef.current?.abort();
+    setDeepProgress(null);
     userExplicitSearchRef.current = true;
     setActiveUsername(clean);
     setIsMatchFeedOpen(true);

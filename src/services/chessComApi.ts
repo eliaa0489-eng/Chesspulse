@@ -1,6 +1,12 @@
 import { PlayerProfile, ChessComMatch, OpeningStat } from '../types/chess';
 import { OPENING_AUDIT_DATA } from '../data/chessData';
-import { generatePersonalizedBlunderBank, auditPgnGameTelemetryFast } from './pgnAnalyzer';
+import {
+  generatePersonalizedBlunderBank,
+  auditPgnGameTelemetryFast,
+  incrementDeepScanRunId,
+  getActiveDeepScanRunId,
+  waitIfSingleMatchReviewActive,
+} from './pgnAnalyzer';
 
 export type ApiErrorCode =
   | 'OK'
@@ -1054,6 +1060,7 @@ async function fetchSingleMonthlyArchiveGames(
   year: string,
   month: string,
   isRecentArchive: boolean,
+  runId: number,
   signal?: AbortSignal
 ): Promise<CompactArchiveGameRecord[]> {
   let rawGames: Record<string, unknown>[] | null = null;
@@ -1094,26 +1101,33 @@ async function fetchSingleMonthlyArchiveGames(
 
   if (!rawGames || rawGames.length === 0) return [];
 
-  // Deep-audit PGNs for up to 18 games in recent archives and up to 6 games in historical archives
+  // Deep-audit PGNs for up to 14 games in recent archives and up to 5 games in historical archives
   // while reading official `accuracies.white` / `accuracies.black` on 100% of games in every archive!
-  const maxDeepPgnPerArchive = isRecentArchive ? 18 : 6;
+  const maxDeepPgnPerArchive = isRecentArchive ? 14 : 5;
   const step = Math.max(1, Math.floor(rawGames.length / maxDeepPgnPerArchive));
   let deepAuditedInMonth = 0;
 
   const compact: CompactArchiveGameRecord[] = [];
   for (let i = 0; i < rawGames.length; i++) {
-    if (signal?.aborted) break;
+    if (signal?.aborted || runId !== getActiveDeepScanRunId()) break;
+
     const shouldAuditPgn =
       deepAuditedInMonth < maxDeepPgnPerArchive &&
       (isRecentArchive || i % step === 0 || i === rawGames.length - 1);
+
     if (shouldAuditPgn) {
+      // Automatically pause background Deep Analysis if the user opens a single match for Game Review
+      await waitIfSingleMatchReviewActive(signal);
+      if (signal?.aborted || runId !== getActiveDeepScanRunId()) break;
       deepAuditedInMonth++;
     }
+
     const parsed = parseRawArchiveGameToCompactRecord(rawGames[i], cleanHandle, shouldAuditPgn);
     if (parsed) compact.push(parsed);
 
-    if (shouldAuditPgn && deepAuditedInMonth % 2 === 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // Yield between audited games so the main thread stays locked at 60 FPS
+    if (shouldAuditPgn) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 6));
     }
   }
   return compact;
@@ -1121,9 +1135,9 @@ async function fetchSingleMonthlyArchiveGames(
 
 /**
  * Staged All-Time Archive Scanner ("Take Your Time for 100% Accuracy").
- * Iterates through all monthly archives of a player in controlled batches, caches past months in IndexedDB,
- * combines official Chess.com `accuracies` across all career games with Quiescence PGN evaluations,
- * and emits live incremental statistics + progress updates after every archive batch.
+ * Runs strictly sequentially in small non-blocking chunks (yielding between games),
+ * pauses automatically if a single match is opened for Game Review, caches past months in IndexedDB,
+ * and throttles UI progress updates to at most once every 120ms.
  */
 export async function scanAllTimePlayerArchives(
   username: string,
@@ -1133,8 +1147,11 @@ export async function scanAllTimePlayerArchives(
   const cleanHandle = sanitizeChessHandle(username);
   if (!cleanHandle) return null;
 
+  const runId = incrementDeepScanRunId();
   const archiveUrls = await fetchPlayerArchiveUrlList(cleanHandle, signal);
-  if (signal?.aborted || archiveUrls.length === 0) return null;
+  if (signal?.aborted || runId !== getActiveDeepScanRunId() || archiveUrls.length === 0) {
+    return null;
+  }
 
   // Parse valid { year, month } pairs from archive URLs
   const parsedArchives: Array<{ year: string; month: string; id: string }> = [];
@@ -1445,77 +1462,77 @@ export async function scanAllTimePlayerArchives(
     }
   };
 
-  // Process all archives in controlled batches of 2 so we never trigger rate limits
-  // and provide smooth, transparent live progress updates.
-  const BATCH_SIZE = 2;
+  // Process archives strictly sequentially in small non-blocking chunks,
+  // automatically pausing whenever a single-match Game Review is active.
+  let lastProgressEmitMs = 0;
 
-  for (let i = 0; i < parsedArchives.length; i += BATCH_SIZE) {
-    if (signal?.aborted) return null;
+  for (let i = 0; i < parsedArchives.length; i++) {
+    if (signal?.aborted || runId !== getActiveDeepScanRunId()) return null;
 
-    const batch = parsedArchives.slice(i, i + BATCH_SIZE);
-    let anyNetworkFetch = false;
+    await waitIfSingleMatchReviewActive(signal);
+    if (signal?.aborted || runId !== getActiveDeepScanRunId()) return null;
 
-    const batchResults = await Promise.all(
-      batch.map(async (arch, batchIdx) => {
-        const globalIdx = i + batchIdx;
-        const isRecentArchive = globalIdx >= Math.max(0, totalArchives - 6);
-        const isCurrentMonth = arch.year === currentYearStr && arch.month === currentMonthStr;
-        const cacheKey = `${cleanHandle}::${arch.year}-${arch.month}`;
+    const arch = parsedArchives[i];
+    const isRecentArchive = i >= Math.max(0, totalArchives - 6);
+    const isCurrentMonth = arch.year === currentYearStr && arch.month === currentMonthStr;
+    const cacheKey = `${cleanHandle}::${arch.year}-${arch.month}`;
 
-        if (!isCurrentMonth) {
-          const cached = await getCachedArchiveRecords(db, cacheKey);
-          if (cached) {
-            return { arch, records: cached };
-          }
-        }
+    let records: CompactArchiveGameRecord[] | null = null;
+    let didNetworkFetch = false;
 
-        anyNetworkFetch = true;
-        const fetched = await fetchSingleMonthlyArchiveGames(
-          cleanHandle,
-          arch.year,
-          arch.month,
-          isRecentArchive,
-          signal
-        );
-        if (!isCurrentMonth && fetched.length > 0) {
-          await setCachedArchiveRecords(db, cacheKey, fetched);
-        }
-        return { arch, records: fetched };
-      })
-    );
-
-    if (signal?.aborted) return null;
-
-    for (const item of batchResults) {
-      ingestArchiveRecords(item.arch, item.records);
+    if (!isCurrentMonth) {
+      records = await getCachedArchiveRecords(db, cacheKey);
     }
 
-    const processedCount = Math.min(totalArchives, i + batch.length);
-    const lastArch = batch[batch.length - 1];
-    const percent = Math.round((processedCount / totalArchives) * 100);
-    const snapshot = buildSnapshotAggregate(processedCount);
+    if (!records) {
+      didNetworkFetch = true;
+      records = await fetchSingleMonthlyArchiveGames(
+        cleanHandle,
+        arch.year,
+        arch.month,
+        isRecentArchive,
+        runId,
+        signal
+      );
+      if (!isCurrentMonth && records.length > 0 && !signal?.aborted && runId === getActiveDeepScanRunId()) {
+        await setCachedArchiveRecords(db, cacheKey, records);
+      }
+    }
 
-    onProgress(
-      {
-        isScanning: processedCount < totalArchives,
-        isComplete: processedCount >= totalArchives,
-        processedArchives: processedCount,
-        totalArchives,
-        totalGamesAnalyzed: totalGames,
-        currentArchiveLabel: `${lastArch.year}/${lastArch.month}`,
-        statusText:
-          processedCount < totalArchives
+    if (signal?.aborted || runId !== getActiveDeepScanRunId()) return null;
+
+    ingestArchiveRecords(arch, records);
+
+    const processedCount = i + 1;
+    const isComplete = processedCount >= totalArchives;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    if (isComplete || now - lastProgressEmitMs >= 120) {
+      lastProgressEmitMs = now;
+      const percent = Math.round((processedCount / totalArchives) * 100);
+      const snapshot = buildSnapshotAggregate(processedCount);
+
+      onProgress(
+        {
+          isScanning: !isComplete,
+          isComplete,
+          processedArchives: processedCount,
+          totalArchives,
+          totalGamesAnalyzed: totalGames,
+          currentArchiveLabel: `${arch.year}/${arch.month}`,
+          statusText: !isComplete
             ? `Scanning Archive ${processedCount}/${totalArchives} — ${totalGames.toLocaleString()} Games Processed...`
             : `All-Time Career Scan Complete — ${totalArchives}/${totalArchives} Archives (${totalGames.toLocaleString()} Games Processed).`,
-        percent,
-      },
-      snapshot
-    );
+          percent,
+        },
+        snapshot
+      );
+    }
 
-    if (processedCount < totalArchives) {
-      // Deliberate pause between batches to respect Chess.com rate limits and keep UI responsive
+    if (!isComplete) {
+      // Yield between archives to respect rate limits and keep main thread responsive
       await new Promise<void>((resolve) =>
-        setTimeout(resolve, anyNetworkFetch ? 220 : 35)
+        setTimeout(resolve, didNetworkFetch ? 140 : 16)
       );
     }
   }
